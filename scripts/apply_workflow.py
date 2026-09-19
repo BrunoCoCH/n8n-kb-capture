@@ -139,7 +139,7 @@ markdown_expr = (
     "## Original text\n\n"
     "${" + sid + ".ocr}\n\n"
     "![screenshot](https://n8n.example.com/media/${" + sid + ".filename}.png)\n\n"
-    "[Voir sur kDrive](" + kd + ")\n"
+    "[View on kDrive](" + kd + ")\n"
     "` }}"
 )
 ef1 = nodes["Edit Fields1"]

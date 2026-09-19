@@ -17,8 +17,8 @@ with urllib.request.urlopen(req, timeout=30) as r:
     img = r.read()
 print("downloaded test image bytes:", len(img), img[:4])
 
-ocr_text = ("Facture Orange Mobile - Montant 19,99 EUR - Echeance 2026-10-05 - "
-            "Test e2e kb-capture after workflow fix")
+ocr_text = ("Orange Mobile invoice - Amount 19.99 EUR - Due 2026-10-05 - "
+            "kb-capture e2e test after workflow fix")
 boundary = "----kbe2e" + uuid.uuid4().hex[:12]
 parts = []
 parts.append(
