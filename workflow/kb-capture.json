@@ -1,0 +1,457 @@
+{
+  "nodes": [
+    {
+      "id": "3529e2b2-84b2-4100-8dbb-2b50dc4bc33e",
+      "name": "Webhook",
+      "webhookId": "c7caae9b-2a8e-4f43-834e-b14ed91e3a33",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kb-capture",
+        "responseMode": "responseNode",
+        "options": {
+          "ignoreBots": false,
+          "binaryPropertyName": "data"
+        },
+        "authentication": "headerAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "X-KB-capture-token"
+        }
+      }
+    },
+    {
+      "id": "f8862922-ee72-4b7f-b414-3221a6dbbb21",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://ai.infomaniak.com/<INFOMANIAK_AI_PRODUCT_ID>/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"mistralai/Mistral-Small-4-119B-2603\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un outil de classification pour une base de connaissances personnelle. Analyse le contenu fourni. Réponds uniquement en JSON valide avec les champs title, filename, summary et tags. title doit être court et explicite. filename doit etre une version de titre sans caractère spécial, juste un suite de motavec des tirets comme un slug. summary doit contenir 1 à 3 phrases. tags doit être une liste de 3 à 7 tags courts, en minuscules, sans #.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.body.text) }}\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.2,\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"kb_classification\",\n      \"strict\": true,\n      \"schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"title\": { \"type\": \"string\" },\n          \"summary\": { \"type\": \"string\" },\n          \"filename\": { \"type\": \"string\" },\n          \"tags\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }\n        },\n        \"required\": [\"title\", \"summary\", \"tags\"],\n        \"additionalProperties\": false\n      }\n    }\n  }\n}",
+        "options": {}
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "id": "ccf1ab51-7468-46d0-91ae-622189ecbadd",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e6da4567-667d-4abd-a9f6-a649d0afd373",
+              "name": "title",
+              "value": "={{ JSON.parse($json.choices[0].message.content).title }}",
+              "type": "string"
+            },
+            {
+              "id": "ad44de7c-968d-4f13-8cea-d3b98958561a",
+              "name": "summary",
+              "value": "={{ JSON.parse($json.choices[0].message.content).summary }}",
+              "type": "string"
+            },
+            {
+              "id": "717e450e-3db8-4ee0-8b74-23e6f0fb1fa9",
+              "name": "tags",
+              "value": "={{ JSON.parse($json.choices[0].message.content).tags }}",
+              "type": "array"
+            },
+            {
+              "id": "ec7821e7-a8c5-40dc-ba09-86394504da12",
+              "name": "ocr",
+              "value": "={{ $('Webhook').item.json.body.text }}",
+              "type": "string"
+            },
+            {
+              "id": "f4f2b948-ce95-48d2-a652-78275703ed14",
+              "name": "filename",
+              "value": "={{ JSON.parse($json.choices[0].message.content).filename || ('capture-' + $now.toFormat('yyyy-MM-dd-HHmmss')) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "32864d4a-86e0-441c-bc9c-c0fd234865a6",
+      "name": "Save Image to Disk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\n// Find the uploaded image in the webhook item's binary properties (n8n names it data0, data1...)\nconst wh = $('Webhook').first();\nconst bin = wh.binary || {};\n\nlet binaryData = null;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.data && b.mimeType && b.mimeType.startsWith('image/')) { binaryData = b; break; }\n}\nif (!binaryData) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) { binaryData = bin[key]; break; }\n  }\n}\n\nif (!binaryData || !binaryData.data) {\n  throw new Error('No image found in webhook. Binary keys: ' + JSON.stringify(Object.keys(bin)));\n}\n\nconst filename = $input.first().json.filename;\nif (!filename) {\n  throw new Error('No filename produced by the AI step.');\n}\n\nconst dir = '/home/ubuntu/n8n/media';\nconst filepath = path.join(dir, filename + '.png');\nfs.mkdirSync(dir, { recursive: true });\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(filepath, buf);\n\n// Pass the binary through as 'data' for downstream nodes (kDrive upload)\nreturn [{\n  json: { ...$input.first().json, saved_to: filepath, file_size: buf.length },\n  binary: { data: binaryData }\n}];"
+      }
+    },
+    {
+      "id": "bc8afba8-3cb2-43ac-92d5-f29789b72b2a",
+      "name": "Upload to kDrive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        848,
+        208
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.infomaniak.com/3/drive/<DRIVE_ID>/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "directory_id",
+              "value": "<DIRECTORY_ID>"
+            },
+            {
+              "name": "file_name",
+              "value": "={{ $json.filename }}.png"
+            },
+            {
+              "name": "total_size",
+              "value": "={{ $('Save Image to Disk').item.json.file_size }}"
+            },
+            {
+              "name": "conflict",
+              "value": "rename"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "kDrive Upload Token"
+        }
+      }
+    },
+    {
+      "id": "e33fa419-a725-41de-93ef-dcd026c80a47",
+      "name": "Create kDrive share link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        208
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "kDrive Upload Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.infomaniak.com/2/drive/<DRIVE_ID>/files/{{ $json.data.id }}/link",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ right: \"public\", can_download: true }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c9d21046-681e-4bfc-b603-6a76e1be1ac6",
+      "name": "Create a database page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        1232,
+        0
+      ],
+      "parameters": {
+        "resource": "databasePage",
+        "dataSourceId": {
+          "__rl": true,
+          "value": "<NOTION_DATA_SOURCE_ID>",
+          "mode": "list",
+          "cachedResultName": "KDB Inbox",
+          "cachedResultUrl": "<NOTION_PAGE_URL>"
+        },
+        "title": "={{ $('Save Image to Disk').item.json.title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Summary|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $('Save Image to Disk').item.json.summary }}"
+            },
+            {
+              "key": "Tags|multi_select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "multiSelectValue": "={{ $('Save Image to Disk').item.json.tags }}"
+            },
+            {
+              "key": "Source|select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "selectValue": "iOS Screenshot"
+            },
+            {
+              "key": "Created|date",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "range": false,
+              "includeTime": true,
+              "date": "={{ $now.toISO() }}",
+              "timezone": "Europe/Paris"
+            },
+            {
+              "key": "Text|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $('Save Image to Disk').item.json.ocr }}"
+            },
+            {
+              "key": "Files & media|files",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "fileUrls": {
+                "multipleValues": false,
+                "fileUrl": [
+                  {
+                    "name": "={{ $('Save Image to Disk').item.json.title }}.png",
+                    "url": "={{ $('Create kDrive share link').item.json.data.url }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {},
+        "contentType": "blockUi",
+        "blockUi": {
+          "blockValues": [
+            {
+              "richText": true,
+              "text": {
+                "text": [
+                  {
+                    "textType": "text",
+                    "text": "={{ $('Save Image to Disk').item.json.ocr }}"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "image",
+              "url": "={{ 'https://n8n.example.com/media/' + $('Save Image to Disk').item.json.filename + '.png' }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_ME",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "id": "6d9dddb9-bc30-4d73-bb31-dbe0af39248a",
+      "name": "Edit Fields1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1424,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "024df396-488d-412f-90de-c754711f1a7e",
+              "name": "title",
+              "value": "={{ $('Save Image to Disk').item.json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "ad7bcd1f-8179-4868-900e-fe927af23dff",
+              "name": "summary",
+              "value": "={{ $('Save Image to Disk').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "b495e0a7-e1bf-4f76-beb9-7fb392c85e0a",
+              "name": "tags",
+              "value": "={{ $('Save Image to Disk').item.json.tags }}",
+              "type": "array"
+            },
+            {
+              "id": "c663160c-3227-433c-b7f2-73834fb4c84a",
+              "name": "ocr",
+              "value": "={{ $('Save Image to Disk').item.json.ocr }}",
+              "type": "string"
+            },
+            {
+              "id": "5ae68ba7-91b4-4ce2-8bbb-f6d2606032dc",
+              "name": "filename",
+              "value": "={{ $('Save Image to Disk').item.json.filename }}",
+              "type": "string"
+            },
+            {
+              "id": "9e821c3f-3b39-4d11-8468-68723a2a947d",
+              "name": "notion_url",
+              "value": "={{ $json.url }}",
+              "type": "string"
+            },
+            {
+              "id": "caf07c73-e023-446b-9b00-06af6fe8f182",
+              "name": "kdrive_url",
+              "value": "=$('Create kDrive share link').item.json.data.url",
+              "type": "string"
+            },
+            {
+              "id": "ac740bf9-b43f-428b-b802-941a4dc2726b",
+              "name": "markdown",
+              "value": "={{ `---\nsource: screenshot\ncreated: ${new Date().toISOString()}\ntags:\n${$('Save Image to Disk').item.json.tags.map(tag => `  - ${tag}`).join('\\n')}\n---\n\n# ${$('Save Image to Disk').item.json.title}\n\n## Summary\n\n${$('Save Image to Disk').item.json.summary}\n\n## Original text\n\n${$('Save Image to Disk').item.json.ocr}\n\n![screenshot](https://n8n.example.com/media/${$('Save Image to Disk').item.json.filename}.png)\n\n[Voir sur kDrive]($('Create kDrive share link').item.json.data.url)\n` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "82165afb-8332-4a59-ad63-489d99106829",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1616,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"title\": {{ JSON.stringify($('Edit Fields1').item.json.title) }},\n  \"markdown\": {{ JSON.stringify($('Edit Fields1').item.json.markdown) }},\n  \"notion_url\": {{ JSON.stringify($('Edit Fields1').item.json.notion_url) }},\n  \"kdrive_url\": {{ JSON.stringify($('Edit Fields1').item.json.kdrive_url) }},\n  \"summary\": {{ JSON.stringify($('Edit Fields1').item.json.summary) }},\n  \"ocr\": {{ JSON.stringify($('Edit Fields1').item.json.ocr) }},\n  \"filename\": {{ JSON.stringify($('Edit Fields1').item.json.filename) }},\n  \"tags\": {{ JSON.stringify($('Edit Fields1').item.json.tags) }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Save Image to Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Image to Disk": {
+      "main": [
+        [
+          {
+            "node": "Upload to kDrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to kDrive": {
+      "main": [
+        [
+          {
+            "node": "Create kDrive share link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create kDrive share link": {
+      "main": [
+        [
+          {
+            "node": "Create a database page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a database page": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

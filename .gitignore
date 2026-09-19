@@ -1,0 +1,28 @@
+# Secrets / env / tokens — NEVER commit these
+*.env
+!*.env.example
+webhook_token.txt
+*.token
+*.pem
+*.key
+*.p12
+*.pfx
+*.pfx.password
+id_rsa*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
