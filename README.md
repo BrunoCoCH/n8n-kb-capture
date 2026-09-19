@@ -8,15 +8,13 @@ Turn iOS screenshots into organized knowledge-base entries — an n8n pipeline t
 
 ```mermaid
 flowchart LR
-    A[iOS Shortcut<br/>screenshot + OCR] -- POST multipart<br/>text + file --> B[n8n Webhook<br/>kb-capture<br/>header auth]
-    B --> C[LLM classification<br/>title / summary / tags / filename]
-    C --> D[Save image to disk]
-    D --> E[POST kDrive v3<br/>upload file]
-    E --> F[POST kDrive v3<br/>create public share link]
-    F --> G[POST Notion API<br/>create database page<br/>props + inline image]
-    G --> H[Respond JSON<br/>markdown / notion_url / kdrive_url]
-    H -- HTTP 200 JSON --> A
-    A -- obsidian://new?... --> I[Obsidian note]
+    A["iOS Shortcut"] -->|"POST multipart OCR + image"| B["n8n webhook"]
+    B --> C["LLM classification"]
+    C --> D["kDrive upload + share link"]
+    D --> E["Notion page"]
+    E --> F["JSON response"]
+    F -->|"HTTP 200"| A
+    A -->|"open note"| G["Obsidian note"]
 ```
 
 ## The workflow
