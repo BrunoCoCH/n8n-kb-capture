@@ -1,45 +1,144 @@
 # n8n-kb-capture
 
-Turn iOS screenshots into organized knowledge-base entries — an n8n pipeline that classifies, stores, and files a screenshot in Notion, then hands you back an `obsidian://new` URL.
+**Save an article you read online — or an interesting social post — into Notion and Obsidian.**
 
-**The pipeline:** an iOS Shortcut sends a screenshot + OCR text (multipart) to a self-hosted n8n webhook → an LLM classifies the content → the image is uploaded to Infomaniak kDrive with a public share link → a Notion database page is created with properties, the OCR text, and the image inline → the webhook replies with JSON that the Shortcut uses to open a new Obsidian note (`obsidian://new`).
+One tap from your phone. You get:
 
-## Architecture
+- A note with a **link back to the source** (when available)
+- **Full text** when the site/app can share it — or what was **on screen** from a screenshot
+- Optional screenshot file storage
+- Organized fields: topics, author, medium (where it came from), format
+
+**Who it’s for:** anyone who saves stuff from the phone and wants it in a real knowledge base — not a pile of screenshots.
+
+**How it feels:** copy a link or share a page → run the Shortcut → a note appears in Notion and Obsidian.
+
+---
+
+## Two ways to launch (read this first)
+
+How you start the Shortcut changes **what gets captured**.
+
+| | **A — Side button / direct (recommended)** | **B — Share Sheet** |
+|---|---|---|
+| **UX** | One tap → takes a **screenshot** | Share → Shortcut |
+| **Result** | Content from **what you see** on screen (OCR) | The **full article/post** as the site/app shares it (and/or URL → full-text reader) |
+| **Best for** | Speed; social posts, cards, what’s visible now | Long articles when you need the complete text |
+| **Trade-off** | May miss text below the fold | Slightly more steps; fuller capture |
+
+**Recommended default:** side button for speed. Use **Share** when you need the whole article, not just what’s on screen.
+
+Both paths can land in **Notion + Obsidian**, with a source link when available.
+
+![Two capture modes: side button saves what you see; Share saves the full article](docs/ux-capture-modes.png)
+
+<details>
+<summary>SVG version (crisper labels)</summary>
+
+![Two capture modes diagram](docs/ux-capture-modes.svg)
+
+</details>
+
+---
+
+## What you get (power-user overview)
+
+### Dual entry on iPhone
+
+1. **Action Button / side button (direct)** — screenshot of what you see; optional clipboard URL if you copied a link first (source + possible extra full-text “vacuum”).
+2. **Share Sheet** — receives what the site/app shares; best path for complete article/post text.
+
+### Faceted metadata (not everything in Tags)
+
+| Field | Meaning | Examples |
+|-------|---------|----------|
+| **Tags** | Topics / subjects **only** | literature, tech, AI, cinema |
+| **Author** | Who created it | J.J. Abrams |
+| **Medium** | Concrete channel / outlet (not named “Outlet”) | NYT, Wired, `@instagram.handle` |
+| **Format** | Optional typology | article, post, video, podcast |
+
+`source_url` is the canonical link — kept separate from tags.
+
+### Requirements (high level)
+
+- Self-hosted **n8n** (public webhook + REST API for the helper scripts)
+- A **Notion** database (Inbox) with properties: Title, Summary, Tags, Author, Medium, Format, Source, URL, …
+- Optional **Infomaniak kDrive** for screenshot files + public share links
+- iOS Shortcuts for the two launch modes
+- Reverse proxy (e.g. nginx) with a raised multipart body size
+
+---
+
+## Architecture (technical)
 
 ```mermaid
 flowchart LR
-    A["iOS Shortcut"] -->|"POST multipart OCR + image"| B["n8n webhook"]
-    B --> C["LLM classification"]
-    C --> D["kDrive upload + share link"]
-    D --> E["Notion page"]
-    E --> F["JSON response"]
-    F -->|"HTTP 200"| A
-    A -->|"open note"| G["Obsidian note"]
+    A["iOS Shortcut"] -->|"POST multipart"| B["n8n webhook"]
+    B --> C["Prepare + optional URL vacuum"]
+    C --> D["LLM classification"]
+    D --> E["Optional kDrive upload"]
+    E --> F["Notion Inbox page"]
+    F --> G["JSON response"]
+    G -->|"HTTP 200"| A
+    A -->|"open note"| H["Obsidian note"]
 ```
 
-## The workflow
+[`workflow/kb-capture.json`](workflow/kb-capture.json) is a **sanitized** n8n export (credential ids → `REPLACE_ME`, instance URL → `n8n.example.com`).
 
-[`workflow/kb-capture.json`](workflow/kb-capture.json) is a cleaned n8n export (no real credential ids) containing 9 nodes:
+Main stages:
 
 1. **Webhook** — `POST /kb-capture`, header auth (`X-KB-capture-token`)
-2. **HTTP Request** — LLM chat completion with a strict JSON schema (`title`, `summary`, `tags`, `filename`)
-3. **Edit Fields** — extracts `title` / `summary` / `tags` / `filename` (timestamp fallback)
-4. **Save Image to Disk** — finds the uploaded image in the webhook item's binary properties (`data0`, `data1`, …), writes it to disk, and passes the binary downstream
-5. **Upload to kDrive** — `POST https://api.infomaniak.com/3/drive/<DRIVE_ID>/upload`
-6. **Create kDrive share link** — `POST …/files/{file_id}/link` with `right=public`
-7. **Create a database page** — Notion page with properties + `blockUi` content blocks (OCR text paragraph + inline image)
-8. **Edit Fields1** — assembles the final `markdown`, `notion_url`, `kdrive_url` payload
-9. **Respond to Webhook1** — returns `200` with a JSON body to the Shortcut
+2. **Prepare Capture** — normalizes `text` / `source_url` / image; optional reader vacuum; cookie/junk cleanup
+3. **Classify LLM** — JSON schema: `title`, `summary`, `tags`, `author`, `medium`, `format`, `filename`
+4. **Edit Fields** — polish topics; strip author/medium/format out of Tags; derive medium from URL when useful
+5. **Has Image?** — with image → save + kDrive; without → Notion-only path
+6. **Create Notion** — properties including **Author**, **Medium**, **Format**; Tags = topics only
+7. **Build Response** — Obsidian front-matter (`author`, `medium`, `format`, `tags`, `source`) + markdown body
+8. **Respond to Webhook** — JSON for the Shortcut
 
-## Requirements
+### Webhook contract
 
-- A self-hosted n8n instance with the public REST API enabled (you need an `N8N_SELFHOSTED_API_KEY` for the scripts).
-- `N8N_DEFAULT_BINARY_DATA_MODE=default` — keep the default (on-disk binary storage). The **Save Image to Disk** node uses `fs` directly; virtual/filesystem modes have not been tested with it.
-- A [Notion integration](https://www.notion.so/my-integrations) and a Notion database to write into.
-- An Infomaniak kDrive with an API token.
-- nginx (or any reverse proxy) in front of n8n with multipart body size raised — see below.
+Multipart `POST` fields:
 
-## Setup
+| Field | Required | Role |
+|-------|----------|------|
+| `text` | often | OCR / shared text / caption |
+| `file` | optional | Screenshot image |
+| `source_url` | optional | Canonical URL → source link + reader vacuum when possible |
+
+Auth header: `X-KB-capture-token: <token>` (exact header name; **no space before `:`**).
+
+Example response shape:
+
+```json
+{
+  "title": "...",
+  "markdown": "---\nsource: https://...\nauthor: \"...\"\nmedium: \"New Yorker\"\nformat: \"article\"\ntags:\n  - literature\n---\n...",
+  "notion_url": "https://www.notion.so/...",
+  "kdrive_url": "https://...",
+  "source_url": "https://...",
+  "vacuum_ok": true,
+  "summary": "...",
+  "tags": ["literature", "design"],
+  "author": "...",
+  "medium": "New Yorker",
+  "format": "article"
+}
+```
+
+### Vacuum / reader + cleanup
+
+When `source_url` is present, the workflow may fetch readable full text via a reader endpoint, then:
+
+- Strip scripts/styles/HTML noise
+- Unwrap strikethrough / cookie-banner junk
+- Prefer cleaned text for the LLM and the note body
+
+Tags stay **topical**; medium/author/format stay in their own fields.
+
+---
+
+## Setup (technical)
 
 ### 1. Reverse proxy (nginx)
 
@@ -48,7 +147,7 @@ server {
     listen 443 ssl;
     server_name n8n.example.com;
 
-    # IMPORTANT: without this, multipart uploads > 1 MB fail with 413 Request Entity Too Large
+    # Without this, multipart uploads > 1 MB often fail with 413
     client_max_body_size 50M;
 
     location / {
@@ -66,133 +165,109 @@ server {
 
 ### 2. Secrets / environment (never committed)
 
-Create a `scripts/n8n.env` file (git-ignored):
+Create `scripts/n8n.env` (git-ignored):
 
 ```bash
 N8N_SELFHOSTED_URL=https://n8n.example.com
 N8N_SELFHOSTED_API_KEY=<your n8n public API key>
 ```
 
-Create a `scripts/webhook_token.txt` file (git-ignored) containing the token the **Webhook** node expects in the `X-KB-capture-token` header.
+Create `scripts/webhook_token.txt` (git-ignored) with the Webhook header token.
 
-The kDrive token and the Notion token are **not** in this repo — they live only as n8n credentials ("kDrive Upload Token", "Notion account").
+kDrive and Notion tokens live only as **n8n credentials**, not in this repo.
 
-`WEBHOOK_URL` is your instance's production webhook URL: `https://<your-n8n-host>/webhook/kb-capture`. Test executions use `/webhook-test/kb-capture` instead.
+Production webhook: `https://<your-n8n-host>/webhook/kb-capture`  
+Test: `/webhook-test/kb-capture`
 
 ### 3. Import the workflow
 
-1. In n8n: *Workflows* → *Import from file* → `workflow/kb-capture.json`.
-2. **Re-attach credentials.** On import, n8n cannot resolve the original credentials — their `id`s are deliberately set to `REPLACE_ME` (names are kept for reference). In each node, select your own credential:
-   - **Webhook** → header auth (`X-KB-capture-token`)
-   - **HTTP Request** (LLM) → Bearer auth
-   - **Upload to kDrive** / **Create kDrive share link** → header auth (kDrive token)
-   - **Create a database page** → Notion API
-3. Replace the placeholders in node parameters:
-   - `<DRIVE_ID>` — your kDrive id (upload + share-link URLs)
-   - `<DIRECTORY_ID>` — target kDrive directory id (`directory_id` query param)
-   - `<INFOMANIAK_AI_PRODUCT_ID>` — Infomaniak AI product id (chat/completions URL)
-   - `<NOTION_DATA_SOURCE_ID>` — id of your Notion database (data source)
-   - `https://n8n.example.com` — your n8n instance URL (used in the inline image URL and the generated markdown)
-4. Activate the workflow and note the `WEBHOOK_URL`.
+1. n8n → *Workflows* → *Import from file* → `workflow/kb-capture.json`
+2. Re-attach credentials (`id`s are `REPLACE_ME`): Webhook header auth, LLM Bearer, kDrive header auth, Notion API
+3. Replace placeholders: `<DRIVE_ID>`, `<DIRECTORY_ID>`, `<INFOMANIAK_AI_PRODUCT_ID>`, `<NOTION_DATA_SOURCE_ID>`, `https://n8n.example.com`
+4. Activate and note the webhook URL
 
-### 4. Notion integration
+### 4. Notion database properties
 
-- Create an integration at <https://www.notion.so/my-integrations> and copy the token.
-- In n8n, create a **Notion API** credential with that token.
-- Share the target database with the integration (database `···` menu → *Connections* → *Connect to*).
-- Replace `<NOTION_DATA_SOURCE_ID>` in the **Create a database page** node with your database's data-source id (the UUID in the database URL).
+Share your Inbox database with the Notion integration, then ensure properties exist:
 
-### 5. kDrive API v3
+| Property | Type |
+|----------|------|
+| Title | title |
+| Summary | rich_text |
+| Tags | multi_select (**topics only**) |
+| Author | rich_text |
+| Medium | rich_text |
+| Format | select (e.g. article, post, vidéo, podcast, …) |
+| Source | select (e.g. iOS Screenshot / Share Sheet) |
+| Created | date |
+| Text | rich_text |
+| URL | url |
+| Files & media | files (optional) |
 
-- Create an API token in the Infomaniak manager → kDrive → *API*.
-- In n8n, create a **Header Auth** credential (`Authorization: Bearer <token>`).
-- Upload: `POST https://api.infomaniak.com/3/drive/<DRIVE_ID>/upload` with query params `directory_id`, `file_name`, `total_size`, `conflict=rename`.
-  - ⚠️ `total_size` is in **bytes**, not KB/MB. The **Save Image to Disk** node computes it (`buf.length`) and passes it to the upload node — get this wrong and the upload fails.
-- Share link: `POST https://api.infomaniak.com/2/drive/<DRIVE_ID>/files/<FILE_ID>/link` with body `{"right": "public", "can_download": true}`.
+### 5. kDrive API (optional, for screenshots)
+
+- Upload: `POST https://api.infomaniak.com/3/drive/<DRIVE_ID>/upload` — `total_size` is in **bytes**
+- Share link: `POST …/files/{id}/link` with `right=public`
+
+---
 
 ## Gotchas
 
-These cost us real debugging time — read them before your first run:
+### nginx 400: space before `:` in a header name
 
-### nginx 400: space before the colon in a header name
+Use `X-KB-capture-token: abc`, never `X-KB-capture-token : abc`. nginx returns a tiny HTML **400** that is easy to miss.
 
-Never put a space before the `:` in an HTTP header name — `X-KB-capture-token: abc`, not `X-KB-capture-token : abc`. nginx follows RFC 7230 strictly and rejects the whole request with **`400 Bad Request`** and a tiny (~166-byte) HTML error page that is easy to miss in logs. This is a classic silent failure when building the request from an iOS Shortcut.
+### iOS Shortcuts: Rich Text → Dictionary
 
-(Related but different: a space before the `:` in an nginx *config directive* — `client_max_body_size 50M;` — is a config syntax error: `nginx: [emerg] invalid parameter` on reload.)
+If *Get Dictionary from Input* fails on the webhook JSON, insert **Set Variable** / *Text* first to coerce plain text.
 
-### iOS Shortcuts: "Get Dictionary from Input" fails with "Rich Text to Dictionary"
+### URL-encode Obsidian deep links
 
-The webhook's JSON response sometimes arrives in Shortcuts as Rich Text, and *Get Dictionary from Input* then errors with `Rich Text to Dictionary`. Workaround: insert a **Set Variable** (or *Text*) action between the HTTP response and *Get Dictionary from Input* to force coercion to plain text.
+Encode title and markdown before building `obsidian://new?vault=…&name=…&content=…`.
 
-### URL-encode everything you put in `obsidian://new`
+---
 
-`#`, `&`, `?`, spaces, etc. break the URL if passed raw. In Shortcuts, run *URL Encode* on `<TITLE>` and `<MARKDOWN>` before injecting them into the URL template.
+## iOS Shortcuts (summary)
 
-## iOS Shortcut
+**Direct / side button:** screenshot (+ optional clipboard URL as `source_url`) + OCR text → multipart POST.
 
-The Shortcut sends a `POST` multipart request to the webhook:
+**Share:** shared URL/text (± image) → multipart POST with `source_url` / `text`.
 
-- Field **`text`**: the OCR text (from *Extract Text from Image*).
-- Field **`file`**: the screenshot (`image/jpeg` or `image/png`).
-
-The final n8n node answers `200` with a JSON body:
-
-```json
-{
-  "title": "...",
-  "markdown": "---\nsource: screenshot\n...\n",
-  "notion_url": "https://notion.so/...",
-  "kdrive_url": "https://...",
-  "summary": "...",
-  "ocr": "...",
-  "filename": "...",
-  "tags": ["..."]
-}
-```
-
-Use it to build the note URL:
+Open the returned note, for example:
 
 ```
 obsidian://new?vault=<VAULT>&name=<TITLE>&content=<MARKDOWN>
 ```
 
-(with `<TITLE>` and `<MARKDOWN>` URL-encoded, per the gotcha above).
+(with URL-encoded `<TITLE>` and `<MARKDOWN>`).
+
+---
 
 ## Scripts
 
-Python 3.10+ helpers in [`scripts/`](scripts/). They read secrets from git-ignored files (`n8n.env`, `webhook_token.txt`) — never from the code.
+Python 3.10+ helpers in [`scripts/`](scripts/). Secrets from git-ignored `n8n.env` / `webhook_token.txt` only.
 
-### `e2e_test.py`
+| Script | Purpose |
+|--------|---------|
+| `e2e_test.py` | POST a sample capture to the production webhook |
+| `apply_workflow.py` | Example surgical PUT via n8n REST API |
+| `n8n_common.py` | Shared API helpers |
 
-End-to-end test: downloads a fresh test image, POSTs it multipart to the production webhook, prints the JSON response.
+> **n8n quirk:** `PUT /api/v1/workflows/{id}` accepts `{name, nodes, connections, settings}` only — **no `versionId`, no `active`**.
 
 ```bash
 cd scripts
-# put webhook_token.txt and n8n.env next to the script first
 python e2e_test.py
-```
-
-### `apply_workflow.py`
-
-Example of applying a targeted fix to a workflow through the n8n REST API. The target workflow id is read from the `N8N_WORKFLOW_ID` environment variable.
-
-> **n8n quirk:** `PUT /api/v1/workflows/{id}` accepts a payload of `{name, nodes, connections, settings}` only — **no `versionId`, no `active`**. Including those fields returns an error.
-
-```bash
-cd scripts
 N8N_WORKFLOW_ID=<your-workflow-id> python apply_workflow.py
 ```
 
-### `n8n_common.py`
-
-Shared helpers (loads `n8n.env`, wraps the n8n REST API). Imported by the two other scripts.
+---
 
 ## Security
 
-- **Never commit** tokens, API keys, passwords, or your real private instance URL.
-- The included `.gitignore` excludes `*.env`, `webhook_token.txt`, `*.pem`, `*.key`, etc.
-- All credential ids in the workflow JSON are replaced with `REPLACE_ME` — re-select them in the n8n UI after import.
-- Instance URLs are replaced with `https://n8n.example.com`; kDrive/Notion ids with placeholders (`<DRIVE_ID>`, `<DIRECTORY_ID>`, `<NOTION_DATA_SOURCE_ID>`, `<INFOMANIAK_AI_PRODUCT_ID>`).
+- Never commit tokens, API keys, or your real private instance URL.
+- Credential ids in the workflow JSON are `REPLACE_ME`.
+- Instance host is `n8n.example.com`; Notion/kDrive ids are placeholders.
 
 ## License
 

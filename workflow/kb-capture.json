@@ -1,4 +1,5 @@
 {
+  "name": "kb-capture",
   "nodes": [
     {
       "id": "3529e2b2-84b2-4100-8dbb-2b50dc4bc33e",
@@ -28,22 +29,37 @@
       }
     },
     {
+      "id": "5fead982-cb32-4852-ac80-c0bee8ca08c8",
+      "name": "Prepare Capture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first();\nconst body = item.json.body || {};\nlet text = (body.text ?? '').toString();\nlet source_url = (body.source_url ?? body.sourceUrl ?? '').toString().trim();\n\n/**\n * Shared text cleanup for kb-capture (Jina vacuum + OCR).\n * Used by unit tests; inlined into Prepare Capture Code node.\n */\nfunction cleanExtractedText(raw) {\n  if (raw == null) return '';\n  let s = String(raw);\n  if (!s.trim()) return '';\n\n  // 1) script/style out entirely\n  s = s.replace(/<script\\b[\\s\\S]*?<\\/script>/gi, ' ');\n  s = s.replace(/<style\\b[\\s\\S]*?<\\/style>/gi, ' ');\n  s = s.replace(/<noscript\\b[\\s\\S]*?<\\/noscript>/gi, ' ');\n\n  // 2) unwrap strikethrough HTML (keep inner text)\n  s = s.replace(/<(?:s|strike|del)\\b[^>]*>([\\s\\S]*?)<\\/(?:s|strike|del)>/gi, '$1');\n  s = s.replace(/<\\/?(?:s|strike|del)\\b[^>]*>/gi, '');\n\n  // 3) strip remaining HTML tags, keep text\n  s = s.replace(/<!--[\\s\\S]*?-->/g, ' ');\n  s = s.replace(/<\\/?[a-zA-Z][^>]*>/g, ' ');\n\n  // 4) markdown strikethrough ~~...~~ → keep text\n  s = s.replace(/~~([^~\\n]{0,400})~~/g, '$1');\n\n  // 5) zero-width / BOM / soft hyphen junk\n  s = s.replace(/[\\u200B-\\u200D\\uFEFF\\u00AD]/g, '');\n\n  // 6) orphan bracket tags like [/...] leftover from broken markup\n  s = s.replace(/\\[\\/[^\\]]{0,60}\\]/g, ' ');\n  // leftover bare angle fragments that aren't real words\n  s = s.replace(/<\\/?[a-zA-Z][^>\\n]{0,40}>/g, ' ');\n\n  // 7) Jina Reader chrome — prefer body after \"Markdown Content:\"\n  const mdMatch = s.match(/^Markdown Content:\\s*/im);\n  if (mdMatch && typeof mdMatch.index === 'number') {\n    const titleMatch = s.match(/^Title:\\s*(.+)$/m);\n    const title = titleMatch ? titleMatch[1].trim() : '';\n    s = s.slice(mdMatch.index + mdMatch[0].length);\n    if (title) {\n      const head = s.trim().slice(0, Math.min(60, title.length));\n      if (!title.startsWith(head) && !s.trim().startsWith('#')) {\n        s = title + '\\n\\n' + s;\n      }\n    }\n  } else {\n    s = s.replace(/^(Title|URL Source|Published Time|Markdown Content):\\s*.*$/gim, '');\n  }\n\n  const BANNER_PHRASE =\n    /accepter (les |tous les )?cookies|accept(\\s+all)?\\s+cookies|reject\\s+all|manage (cookie )?preferences|nous utilisons des cookies|this site uses cookies|privacy center|consent management|cookiebot|onetrust|didomi|politique de confidentialit[eé]|privacy policy|tracking technologies|adchoices|gestion des cookies|param[eè]tres (des |de )?cookies/i;\n\n  const CONSENT_TOKEN =\n    /cookies?|consentement|consent|accepter|accept all|reject all|manage preferences|politique de confidentialit[eé]|privacy policy|nous utilisons des cookies|this site uses cookies|\\bGDPR\\b|\\bRGPD\\b|OneTrust|Cookiebot|Didomi|consent management|privacy center|tracking technologies|essential cookies|targeted advertising|adchoices|social media services|core website features|gestion des cookies|pr[eé]f[eé]rences/gi;\n\n  const CMP_HEADER =\n    /^(Privacy Center|Social Media|Essential|Targeted|Performance|Functional|Marketing|Strictly Necessary|Cookie Settings|Manage Consent|Gestion des cookies|Centre de confidentialit[eé]|Pr[eé]f[eé]rences de cookies)$/i;\n\n  function consentScore(p) {\n    const m = p.match(CONSENT_TOKEN);\n    return m ? m.length : 0;\n  }\n\n  // 8) drop consent-heavy paragraphs (blocks, not every \"cookie\" mention)\n  function isConsentBlock(t) {\n    if (!t) return false;\n    if (CMP_HEADER.test(t) && t.length < 80) return true;\n    if (BANNER_PHRASE.test(t) && t.length < 1200) return true;\n    const score = consentScore(t);\n    // heavy consent vocabulary → block\n    if (score >= 2) return true;\n    // short banner-like blurbs with classic consent phrasing\n    if (score >= 1 && t.length < 280 && BANNER_PHRASE.test(t)) return true;\n    return false;\n  }\n\n  let paras = s.split(/\\n\\s*\\n+/);\n  paras = paras.filter((p) => !isConsentBlock(p.trim()));\n\n  // drop leading short CMP chrome (headers / toggle rows) at document start\n  while (paras.length) {\n    const t = paras[0].trim();\n    if (!t) {\n      paras.shift();\n      continue;\n    }\n    if (CMP_HEADER.test(t)) {\n      paras.shift();\n      continue;\n    }\n    if (isConsentBlock(t)) {\n      paras.shift();\n      continue;\n    }\n    if (/^(- \\[[ xX]\\]\\s*On\\s*)+$/m.test(t)) {\n      paras.shift();\n      continue;\n    }\n    break;\n  }\n\n  s = paras.join('\\n\\n');\n\n  // line-level CMP chrome\n  s = s\n    .split('\\n')\n    .filter((line) => {\n      const t = line.trim();\n      if (!t) return true;\n      if (/^- \\[[ xX]\\]\\s*On\\s*$/.test(t)) return false;\n      if (/^\\*\\s*\\*\\s*\\*$/.test(t) || /^\\*{3,}$/.test(t)) return false;\n      if (CMP_HEADER.test(t)) return false;\n      if (BANNER_PHRASE.test(t) && t.length < 220) return false;\n      return true;\n    })\n    .join('\\n');\n\n  // 9) whitespace normalize\n  s = s.replace(/[ \\t]+/g, ' ');\n  s = s.replace(/ *\\n */g, '\\n');\n  s = s.replace(/\\n{3,}/g, '\\n\\n');\n  return s.trim();\n}\n\n// Avoid `new URL()` — unavailable / unreliable in some n8n Code sandboxes.\nif (!/^https?:\\/\\/[^\\s<>\"{}|\\\\^`[\\]]+$/i.test(source_url)) {\n  source_url = '';\n} else {\n  source_url = source_url.replace(/[.,);]+$/g, '');\n}\n\nconst bin = item.binary || {};\nlet has_image = false;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.mimeType && String(b.mimeType).startsWith('image/')) {\n    has_image = true;\n    break;\n  }\n}\nif (!has_image) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      has_image = true;\n      break;\n    }\n  }\n}\n\nif (!text && !source_url && !has_image) {\n  throw new Error('Need at least one of: text, source_url, or image file');\n}\n\nlet full_text_raw = '';\nlet full_text = '';\nlet vacuum_ok = false;\nlet vacuum_error = '';\nif (source_url) {\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://r.jina.ai/' + source_url,\n      headers: {\n        Accept: 'text/plain',\n        'User-Agent': 'kb-capture/1.0',\n      },\n      timeout: 20000,\n    });\n    full_text_raw = typeof res === 'string' ? res : String(res ?? '');\n    full_text = cleanExtractedText(full_text_raw);\n    vacuum_ok = full_text.trim().length >= 80;\n    if (!vacuum_ok) vacuum_error = 'vacuum_too_short';\n  } catch (e) {\n    full_text_raw = '';\n    full_text = '';\n    vacuum_ok = false;\n    vacuum_error = (e && e.message) ? String(e.message).slice(0, 200) : 'vacuum_failed';\n  }\n}\n\nconst text_clean = cleanExtractedText(text);\n\nconst content_for_llm = (\n  vacuum_ok ? full_text : (text_clean || source_url || 'capture sans texte')\n).slice(0, 12000);\n\nconst body_content = vacuum_ok ? full_text : text_clean;\n\nreturn [{\n  json: {\n    text: text_clean,\n    text_raw: text,\n    source_url,\n    has_image,\n    full_text,\n    full_text_raw,\n    full_text_clean: full_text,\n    vacuum_ok,\n    vacuum_error,\n    content_for_llm,\n    body_content,\n  },\n  binary: item.binary,\n}];\n"
+      }
+    },
+    {
       "id": "f8862922-ee72-4b7f-b414-3221a6dbbb21",
-      "name": "HTTP Request",
+      "name": "Classify LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        224,
+        400,
         0
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://ai.infomaniak.com/<INFOMANIAK_AI_PRODUCT_ID>/openai/v1/chat/completions",
+        "url": "https://api.infomaniak.com/2/ai/<INFOMANIAK_AI_PRODUCT_ID>/openai/v1/chat/completions",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBearerAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"mistralai/Mistral-Small-4-119B-2603\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a classification tool for a personal knowledge base. Analyze the provided content. Answer only with valid JSON containing the fields title, filename, summary and tags. title must be short and explicit. filename must be a slugified version of the title: no special characters, only lowercase words separated by dashes. summary must contain 1 to 3 sentences. tags must be a list of 3 to 7 short tags, lowercase, without #.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.body.text) }}\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.2,\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"kb_classification\",\n      \"strict\": true,\n      \"schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"title\": { \"type\": \"string\" },\n          \"summary\": { \"type\": \"string\" },\n          \"filename\": { \"type\": \"string\" },\n          \"tags\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }\n        },\n        \"required\": [\"title\", \"summary\", \"tags\"],\n        \"additionalProperties\": false\n      }\n    }\n  }\n}",
+        "jsonBody": "={\n  \"model\": \"mistralai/Mistral-Small-4-119B-2603\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Tu es un outil de classification pour une base de connaissances personnelle. Analyse le contenu fourni. Réponds uniquement en JSON valide. Champs: title, filename, summary, tags, author, medium, format. title: court et explicite. filename: slug ascii avec tirets, sans accents ni ponctuation. summary: 1 à 3 phrases. tags: 3 à 7 sujets TOPICAUX courts (idéalement 1 mot, max 2-3). Style documentaire (littérature, tech, IA, cinéma, politique…). Vocabulaire OUVERT: tu peux créer de nouveaux tags courts et réutilisables. Interdit: phrases poétiques/marketing (ex: 'mystère littéraire', 'romand interactif') → utilise plutôt 'littérature'. Interdit dans tags: author, medium (canal), format — ceux-ci ont leurs propres champs. author: créateur saillant (personne/org), ou chaîne vide. medium: canal/marque/handle CONCRET où c'est paru — OBLIGATOIRE si détectable. Exemples medium: NYT, Wired, Le Monde, New Yorker, LinkedIn, Substack, @ninon.ia_officiel (Instagram), @handle (X/Twitter), nom de chaîne YouTube. Préférer abréviations connues (NYT pas 'The New York Times'). medium ≠ format: ne mets PAS 'article' ou 'post' dans medium. format: typologie optionnelle (article, post, vidéo, podcast, newsletter, thread, screenshot) ou chaîne vide. Pas de tags issus de bannières cookies/RGPD.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.content_for_llm) }}\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.2,\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"kb_classification\",\n      \"strict\": true,\n      \"schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"title\": { \"type\": \"string\" },\n          \"summary\": { \"type\": \"string\" },\n          \"filename\": { \"type\": \"string\" },\n          \"tags\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } },\n          \"author\": { \"type\": \"string\" },\n          \"medium\": { \"type\": \"string\" },\n          \"format\": { \"type\": \"string\" }\n        },\n        \"required\": [\"title\", \"summary\", \"tags\", \"author\", \"medium\", \"format\"],\n        \"additionalProperties\": false\n      }\n    }\n  }\n}",
         "options": {}
       },
       "credentials": {
@@ -56,48 +72,16 @@
     {
       "id": "ccf1ab51-7468-46d0-91ae-622189ecbadd",
       "name": "Edit Fields",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        448,
+        600,
         0
       ],
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "e6da4567-667d-4abd-a9f6-a649d0afd373",
-              "name": "title",
-              "value": "={{ JSON.parse($json.choices[0].message.content).title }}",
-              "type": "string"
-            },
-            {
-              "id": "ad44de7c-968d-4f13-8cea-d3b98958561a",
-              "name": "summary",
-              "value": "={{ JSON.parse($json.choices[0].message.content).summary }}",
-              "type": "string"
-            },
-            {
-              "id": "717e450e-3db8-4ee0-8b74-23e6f0fb1fa9",
-              "name": "tags",
-              "value": "={{ JSON.parse($json.choices[0].message.content).tags }}",
-              "type": "array"
-            },
-            {
-              "id": "ec7821e7-a8c5-40dc-ba09-86394504da12",
-              "name": "ocr",
-              "value": "={{ $('Webhook').item.json.body.text }}",
-              "type": "string"
-            },
-            {
-              "id": "f4f2b948-ce95-48d2-a652-78275703ed14",
-              "name": "filename",
-              "value": "={{ JSON.parse($json.choices[0].message.content).filename || ('capture-' + $now.toFormat('yyyy-MM-dd-HHmmss')) }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first();\nconst prep = $('Prepare Capture').first().json;\n\nlet parsed = {};\ntry {\n  const raw = item.json.choices?.[0]?.message?.content;\n  parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n} catch (e) {\n  parsed = {};\n}\n\nconst SOFT_MAP = {\n  'mystère littéraire': 'littérature',\n  'mystere litteraire': 'littérature',\n  'romand interactif': 'littérature',\n  'roman interactif': 'littérature',\n  'the new york times': 'NYT',\n  'new york times': 'NYT',\n  'new yorker': 'New Yorker',\n};\n\nfunction softMap(s) {\n  const k = String(s || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  return SOFT_MAP[k] || null;\n}\n\nfunction isProperish(s) {\n  return /^@/.test(s) || /[A-ZÀ-Ÿ]/.test(s) || /\\./.test(s);\n}\n\nfunction polishTopic(tag) {\n  let t = String(tag || '').trim().replace(/^#/, '');\n  if (!t) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  const words = t.split(/\\s+/).filter(Boolean);\n  if (words.length > 3) {\n    const first = softMap(words.slice(0, 2).join(' ')) || softMap(words[0]) || words[0];\n    t = first;\n  }\n  if (/cookie|consent|rgpd|gdpr|onetrust|cookiebot/i.test(t)) return '';\n  if (!isProperish(t)) t = t.toLowerCase();\n  return t.slice(0, 48);\n}\n\nfunction polishFacet(s, { allowAt = true } = {}) {\n  let t = String(s || '').trim();\n  if (!t || /^n\\/?a$/i.test(t) || /^unknown$/i.test(t) || /^inconnu$/i.test(t)) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  if (allowAt && /^instagram\\.com\\/([^/?#]+)/i.test(t)) {\n    return '@' + t.match(/instagram\\.com\\/([^/?#]+)/i)[1];\n  }\n  const words = t.split(/\\s+/);\n  if (words.length > 4 && !/^@/.test(t)) {\n    const m = softMap(t) || softMap(words.slice(0, 3).join(' '));\n    if (m) return m;\n  }\n  return t.slice(0, 60);\n}\n\nlet tags = Array.isArray(parsed.tags) ? parsed.tags.map(polishTopic).filter(Boolean) : [];\nconst seen = new Set();\ntags = tags.filter((t) => {\n  const k = t.toLowerCase();\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n}).slice(0, 7);\n\nfunction mediumFromUrl(url) {\n  const u = String(url || '');\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  if (!m) return '';\n  const host = m[1].toLowerCase().replace(/^www\\./, '');\n  const path = (u.split(host)[1] || '').split(/[?#]/)[0] || '';\n  const HOST_MAP = {\n    'nytimes.com': 'NYT',\n    'www.nytimes.com': 'NYT',\n    'newyorker.com': 'New Yorker',\n    'wired.com': 'Wired',\n    'lemonde.fr': 'Le Monde',\n    'linkedin.com': 'LinkedIn',\n    'x.com': 'X',\n    'twitter.com': 'X',\n    'youtube.com': 'YouTube',\n    'youtu.be': 'YouTube',\n    'substack.com': 'Substack',\n    'medium.com': 'Medium.com',\n  };\n  if (HOST_MAP[host]) return HOST_MAP[host];\n  if (host === 'instagram.com' || host.endsWith('.instagram.com')) {\n    const h = path.match(/^\\/@?([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'Instagram';\n  }\n  if (host === 'tiktok.com') {\n    const h = path.match(/^\\/@([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'TikTok';\n  }\n  const sub = host.match(/^([a-z0-9-]+)\\.substack\\.com$/);\n  if (sub) return sub[1] + ' (Substack)';\n  const label = host.split('.')[0];\n  if (label && label.length >= 2 && label !== 'www') {\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  }\n  return '';\n}\n\nconst author = polishFacet(parsed.author || '', { allowAt: false });\nconst llmMedium = polishFacet(\n  parsed.medium || parsed.outlet || parsed.publication || '',\n  { allowAt: true }\n);\nconst urlMedium = mediumFromUrl(prep.source_url || '');\nlet medium = urlMedium || llmMedium;\nif (/^(article|post|vid[eé]o|podcast|newsletter|thread|screenshot)$/i.test(medium) && urlMedium) {\n  medium = urlMedium;\n}\nconst format = polishFacet(parsed.format || '', { allowAt: false }).toLowerCase();\n\n// Strip facet echoes from topic tags (Tags = subjects only)\nconst facetKeys = new Set(\n  [author, medium, format].filter(Boolean).map((x) => x.toLowerCase())\n);\ntags = tags.filter((t) => !facetKeys.has(t.toLowerCase()));\n\nconst title = (parsed.title || 'capture').toString().trim().slice(0, 200) || 'capture';\nconst summary = (parsed.summary || '').toString().trim();\nlet filename = (parsed.filename || '').toString().trim();\nif (!filename) {\n  filename = 'capture-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\n}\nfilename = filename.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'capture';\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic: tags,\n    author,\n    medium,\n    format,\n    ocr: prep.text || '',\n    filename,\n    source_url: prep.source_url || '',\n    full_text: prep.full_text || '',\n    full_text_raw: prep.full_text_raw || '',\n    vacuum_ok: !!prep.vacuum_ok,\n    body_content: prep.body_content || '',\n    has_image: !!prep.has_image,\n  },\n}];\n"
       }
     },
     {
@@ -106,13 +90,47 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        624,
+        800,
         0
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\n// Find the uploaded image in the webhook item's binary properties (n8n names it data0, data1...)\nconst wh = $('Webhook').first();\nconst bin = wh.binary || {};\n\nlet binaryData = null;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.data && b.mimeType && b.mimeType.startsWith('image/')) { binaryData = b; break; }\n}\nif (!binaryData) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) { binaryData = bin[key]; break; }\n  }\n}\n\nif (!binaryData || !binaryData.data) {\n  throw new Error('No image found in webhook. Binary keys: ' + JSON.stringify(Object.keys(bin)));\n}\n\nconst filename = $input.first().json.filename;\nif (!filename) {\n  throw new Error('No filename produced by the AI step.');\n}\n\nconst dir = '/home/ubuntu/n8n/media';\nconst filepath = path.join(dir, filename + '.png');\nfs.mkdirSync(dir, { recursive: true });\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(filepath, buf);\n\n// Pass the binary through as 'data' for downstream nodes (kDrive upload)\nreturn [{\n  json: { ...$input.first().json, saved_to: filepath, file_size: buf.length },\n  binary: { data: binaryData }\n}];"
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first();\nconst base = input.json;\nconst wh = $('Webhook').first();\nconst bin = wh.binary || {};\n\nlet binaryData = null;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.data && b.mimeType && b.mimeType.startsWith('image/')) {\n    binaryData = b;\n    break;\n  }\n}\nif (!binaryData) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      binaryData = bin[key];\n      break;\n    }\n  }\n}\n\nif (!binaryData || !binaryData.data) {\n  return [{\n    json: {\n      ...base,\n      has_image: false,\n      saved_to: '',\n      file_size: 0,\n      kdrive_url: '',\n    },\n  }];\n}\n\nconst filename = base.filename;\nif (!filename) {\n  throw new Error('No filename produced by the AI step.');\n}\n\nconst dir = '/home/ubuntu/n8n/media';\nconst filepath = path.join(dir, filename + '.png');\nfs.mkdirSync(dir, { recursive: true });\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(filepath, buf);\n\nreturn [{\n  json: {\n    ...base,\n    has_image: true,\n    saved_to: filepath,\n    file_size: buf.length,\n  },\n  binary: { data: binaryData },\n}];\n"
+      }
+    },
+    {
+      "id": "ceaaf500-4e2a-4ee7-8d70-e47fe27c7d5e",
+      "name": "Has Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7f2920b6-e3ed-410d-ad8c-0d49c03e0fb9",
+              "leftValue": "={{ $json.has_image }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       }
     },
     {
@@ -121,8 +139,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        848,
-        208
+        1200,
+        -120
       ],
       "parameters": {
         "method": "POST",
@@ -134,7 +152,7 @@
           "parameters": [
             {
               "name": "directory_id",
-              "value": "<DIRECTORY_ID>"
+              "value": "7"
             },
             {
               "name": "file_name",
@@ -168,15 +186,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        1040,
-        208
+        1400,
+        -120
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_ME",
-          "name": "kDrive Upload Token"
-        }
-      },
       "parameters": {
         "method": "POST",
         "url": "=https://api.infomaniak.com/2/drive/<DRIVE_ID>/files/{{ $json.data.id }}/link",
@@ -186,16 +198,270 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ right: \"public\", can_download: true }) }}",
         "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "kDrive Upload Token"
+        }
+      }
+    },
+    {
+      "id": "9fc70cce-cf93-4526-a23a-7d03948d128b",
+      "name": "Enrich With Media",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        -120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b4b28dfa-b9e3-4881-ac86-385f5e0b14e2",
+              "name": "title",
+              "value": "={{ $('Save Image to Disk').item.json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "d21ae73c-b54f-4fe5-9e6c-0f104b999333",
+              "name": "summary",
+              "value": "={{ $('Save Image to Disk').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "00e22e68-513e-455b-8f50-a91ef4c5025c",
+              "name": "tags",
+              "value": "={{ $('Save Image to Disk').item.json.tags }}",
+              "type": "array"
+            },
+            {
+              "id": "7a05aa4b-7fb1-40d3-9ce3-157b6287d88b",
+              "name": "ocr",
+              "value": "={{ $('Save Image to Disk').item.json.ocr }}",
+              "type": "string"
+            },
+            {
+              "id": "2e9bd1bd-e115-44cf-b6d0-a5960bb4f1b4",
+              "name": "filename",
+              "value": "={{ $('Save Image to Disk').item.json.filename }}",
+              "type": "string"
+            },
+            {
+              "id": "8401d19e-a2f3-4187-afb4-37f77679944b",
+              "name": "source_url",
+              "value": "={{ $('Save Image to Disk').item.json.source_url }}",
+              "type": "string"
+            },
+            {
+              "id": "cd594587-ef04-476d-add1-b41f7a0f1696",
+              "name": "full_text",
+              "value": "={{ $('Save Image to Disk').item.json.full_text }}",
+              "type": "string"
+            },
+            {
+              "id": "0c4ddf0c-79ac-4b52-b5fe-b745bcbc625c",
+              "name": "vacuum_ok",
+              "value": "={{ $('Save Image to Disk').item.json.vacuum_ok }}",
+              "type": "boolean"
+            },
+            {
+              "id": "8c07dd6a-01a3-46cb-b2bf-c52232fab5fb",
+              "name": "body_content",
+              "value": "={{ $('Save Image to Disk').item.json.body_content }}",
+              "type": "string"
+            },
+            {
+              "id": "bb9e142e-6cc5-4e67-982b-ee09cdb26082",
+              "name": "has_image",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "90339851-d713-4add-925e-623f2c4270d0",
+              "name": "kdrive_url",
+              "value": "={{ $json.data.url }}",
+              "type": "string"
+            },
+            {
+              "id": "46b5872e-2792-41a5-a303-1fc6546896f7",
+              "name": "author",
+              "value": "={{ $('Save Image to Disk').item.json.author }}",
+              "type": "string"
+            },
+            {
+              "id": "dfd56c7e-062f-48fb-9706-d2c19b03247e",
+              "name": "format",
+              "value": "={{ $('Save Image to Disk').item.json.format }}",
+              "type": "string"
+            },
+            {
+              "id": "77148e54-927c-4ed2-9fab-8a5d2230b24a",
+              "name": "tags_topic",
+              "value": "={{ $('Save Image to Disk').item.json.tags_topic }}",
+              "type": "array"
+            },
+            {
+              "id": "c71999a9-5086-449d-b62d-2bc3ca5f7ed0",
+              "name": "medium",
+              "value": "={{ $('Save Image to Disk').item.json.medium }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bf69d928-660a-46d4-9724-bee769235630",
+      "name": "Enrich Without Media",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1200,
+        160
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8d1c211d-d512-410f-b86a-7d6d5c037298",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "206c299b-11fb-4bfb-9fbc-36753e1c1619",
+              "name": "summary",
+              "value": "={{ $json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "ffd9362d-21ca-476c-a1c3-00ab778cca90",
+              "name": "tags",
+              "value": "={{ $json.tags }}",
+              "type": "array"
+            },
+            {
+              "id": "21b32274-09e0-4a9a-aa71-d3b97a95c175",
+              "name": "ocr",
+              "value": "={{ $json.ocr }}",
+              "type": "string"
+            },
+            {
+              "id": "5ab6cb6a-1fc7-4973-8e28-3eec3ca3e413",
+              "name": "filename",
+              "value": "={{ $json.filename }}",
+              "type": "string"
+            },
+            {
+              "id": "de0122f1-4484-4509-bbac-baa873dd50e0",
+              "name": "source_url",
+              "value": "={{ $json.source_url }}",
+              "type": "string"
+            },
+            {
+              "id": "9c17be1e-3a9d-4faf-9013-c8a805f61845",
+              "name": "full_text",
+              "value": "={{ $json.full_text }}",
+              "type": "string"
+            },
+            {
+              "id": "967a760f-c95d-4c65-9133-2e03ce6f35a5",
+              "name": "vacuum_ok",
+              "value": "={{ $json.vacuum_ok }}",
+              "type": "boolean"
+            },
+            {
+              "id": "36b389d3-1c6f-488f-8d2e-f93d4fb76df3",
+              "name": "body_content",
+              "value": "={{ $json.body_content }}",
+              "type": "string"
+            },
+            {
+              "id": "a33d0018-5654-4e5c-aabb-00f665f986b4",
+              "name": "has_image",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "e28f8549-06ed-46ba-b6d0-d7ec6a87a709",
+              "name": "kdrive_url",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "522ff611-00e4-48ac-acbb-25658544aedd",
+              "name": "author",
+              "value": "={{ $json.author }}",
+              "type": "string"
+            },
+            {
+              "id": "6ae77dd8-bd3a-4c85-ba60-69fd36248252",
+              "name": "format",
+              "value": "={{ $json.format }}",
+              "type": "string"
+            },
+            {
+              "id": "88071acb-c4ad-45af-9c7e-2230f0d26c2c",
+              "name": "tags_topic",
+              "value": "={{ $json.tags_topic }}",
+              "type": "array"
+            },
+            {
+              "id": "88e32392-68d3-41a7-88ea-7ceac562ad9b",
+              "name": "medium",
+              "value": "={{ $json.medium }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "533d6e8d-76c7-452f-a85f-1cc85d245f33",
+      "name": "Notion Path?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "be88b912-0b91-4897-b084-8e30b00ba16c",
+              "leftValue": "={{ $json.has_image }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       }
     },
     {
       "id": "c9d21046-681e-4bfc-b603-6a76e1be1ac6",
-      "name": "Create a database page",
+      "name": "Create Notion (with image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
       "position": [
-        1232,
-        0
+        2000,
+        -120
       ],
       "parameters": {
         "resource": "databasePage",
@@ -203,26 +469,41 @@
           "__rl": true,
           "value": "<NOTION_DATA_SOURCE_ID>",
           "mode": "list",
-          "cachedResultName": "KDB Inbox",
-          "cachedResultUrl": "<NOTION_PAGE_URL>"
+          "cachedResultName": "Knowledge Base Inbox",
+          "cachedResultUrl": "https://www.notion.so/<NOTION_PAGE_OR_DB>"
         },
-        "title": "={{ $('Save Image to Disk').item.json.title }}",
+        "title": "={{ $json.title }}",
         "propertiesUi": {
           "propertyValues": [
             {
               "key": "Summary|rich_text",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "textContent": "={{ $('Save Image to Disk').item.json.summary }}"
+              "textContent": "={{ $json.summary }}"
             },
             {
               "key": "Tags|multi_select",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "multiSelectValue": "={{ $('Save Image to Disk').item.json.tags }}"
+              "multiSelectValue": "={{ $json.tags }}"
+            },
+            {
+              "key": "Format|select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "selectValue": "={{ $json.format || '' }}"
+            },
+            {
+              "key": "Medium|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $json.medium || '' }}"
+            },
+            {
+              "key": "Author|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $json.author || '' }}"
             },
             {
               "key": "Source|select",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "selectValue": "iOS Screenshot"
+              "selectValue": "={{ $json.has_image ? 'iOS Screenshot' : 'Share Sheet' }}"
             },
             {
               "key": "Created|date",
@@ -235,7 +516,12 @@
             {
               "key": "Text|rich_text",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "textContent": "={{ $('Save Image to Disk').item.json.ocr }}"
+              "textContent": "={{ ($json.body_content || $json.ocr || '').toString().slice(0, 1900) }}"
+            },
+            {
+              "key": "URL|url",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "urlValue": "={{ $json.source_url ? $json.source_url : ('https://n8n.example.com/media/' + $json.filename + '.png') }}"
             },
             {
               "key": "Files & media|files",
@@ -244,8 +530,8 @@
                 "multipleValues": false,
                 "fileUrl": [
                   {
-                    "name": "={{ $('Save Image to Disk').item.json.title }}.png",
-                    "url": "={{ $('Create kDrive share link').item.json.data.url }}"
+                    "name": "={{ $json.title }}.png",
+                    "url": "={{ $json.kdrive_url }}"
                   }
                 ]
               }
@@ -262,14 +548,14 @@
                 "text": [
                   {
                     "textType": "text",
-                    "text": "={{ $('Save Image to Disk').item.json.ocr }}"
+                    "text": "={{ ($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 1800) }}"
                   }
                 ]
               }
             },
             {
               "type": "image",
-              "url": "={{ 'https://n8n.example.com/media/' + $('Save Image to Disk').item.json.filename + '.png' }}"
+              "url": "={{ 'https://n8n.example.com/media/' + $json.filename + '.png' }}"
             }
           ]
         }
@@ -282,68 +568,114 @@
       }
     },
     {
-      "id": "6d9dddb9-bc30-4d73-bb31-dbe0af39248a",
-      "name": "Edit Fields1",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
+      "id": "34d58c23-3821-498a-9a74-a0c30c2853c7",
+      "name": "Create Notion (no image)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
       "position": [
-        1424,
-        0
+        2000,
+        160
       ],
       "parameters": {
-        "assignments": {
-          "assignments": [
+        "resource": "databasePage",
+        "dataSourceId": {
+          "__rl": true,
+          "value": "<NOTION_DATA_SOURCE_ID>",
+          "mode": "list",
+          "cachedResultName": "Knowledge Base Inbox",
+          "cachedResultUrl": "https://www.notion.so/<NOTION_PAGE_OR_DB>"
+        },
+        "title": "={{ $json.title }}",
+        "propertiesUi": {
+          "propertyValues": [
             {
-              "id": "024df396-488d-412f-90de-c754711f1a7e",
-              "name": "title",
-              "value": "={{ $('Save Image to Disk').item.json.title }}",
-              "type": "string"
+              "key": "Summary|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $json.summary }}"
             },
             {
-              "id": "ad7bcd1f-8179-4868-900e-fe927af23dff",
-              "name": "summary",
-              "value": "={{ $('Save Image to Disk').item.json.summary }}",
-              "type": "string"
+              "key": "Tags|multi_select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "multiSelectValue": "={{ $json.tags }}"
             },
             {
-              "id": "b495e0a7-e1bf-4f76-beb9-7fb392c85e0a",
-              "name": "tags",
-              "value": "={{ $('Save Image to Disk').item.json.tags }}",
-              "type": "array"
+              "key": "Format|select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "selectValue": "={{ $json.format || '' }}"
             },
             {
-              "id": "c663160c-3227-433c-b7f2-73834fb4c84a",
-              "name": "ocr",
-              "value": "={{ $('Save Image to Disk').item.json.ocr }}",
-              "type": "string"
+              "key": "Medium|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $json.medium || '' }}"
             },
             {
-              "id": "5ae68ba7-91b4-4ce2-8bbb-f6d2606032dc",
-              "name": "filename",
-              "value": "={{ $('Save Image to Disk').item.json.filename }}",
-              "type": "string"
+              "key": "Author|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ $json.author || '' }}"
             },
             {
-              "id": "9e821c3f-3b39-4d11-8468-68723a2a947d",
-              "name": "notion_url",
-              "value": "={{ $json.url }}",
-              "type": "string"
+              "key": "Source|select",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "selectValue": "={{ $json.has_image ? 'iOS Screenshot' : 'Share Sheet' }}"
             },
             {
-              "id": "caf07c73-e023-446b-9b00-06af6fe8f182",
-              "name": "kdrive_url",
-              "value": "=$('Create kDrive share link').item.json.data.url",
-              "type": "string"
+              "key": "Created|date",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "range": false,
+              "includeTime": true,
+              "date": "={{ $now.toISO() }}",
+              "timezone": "Europe/Paris"
             },
             {
-              "id": "ac740bf9-b43f-428b-b802-941a4dc2726b",
-              "name": "markdown",
-              "value": "={{ `---\nsource: screenshot\ncreated: ${new Date().toISOString()}\ntags:\n${$('Save Image to Disk').item.json.tags.map(tag => `  - ${tag}`).join('\\n')}\n---\n\n# ${$('Save Image to Disk').item.json.title}\n\n## Summary\n\n${$('Save Image to Disk').item.json.summary}\n\n## Original text\n\n${$('Save Image to Disk').item.json.ocr}\n\n![screenshot](https://n8n.example.com/media/${$('Save Image to Disk').item.json.filename}.png)\n\n[View on kDrive]($('Create kDrive share link').item.json.data.url)\n` }}",
-              "type": "string"
+              "key": "Text|rich_text",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "textContent": "={{ ($json.body_content || $json.ocr || '').toString().slice(0, 1900) }}"
+            },
+            {
+              "key": "URL|url",
+              "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
+              "urlValue": "={{ $json.source_url ? $json.source_url : ('https://n8n.example.com/media/' + $json.filename + '.png') }}"
             }
           ]
         },
-        "options": {}
+        "options": {},
+        "contentType": "blockUi",
+        "blockUi": {
+          "blockValues": [
+            {
+              "richText": true,
+              "text": {
+                "text": [
+                  {
+                    "textType": "text",
+                    "text": "={{ ($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 1800) }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_ME",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "id": "7efded13-21cb-4805-bafc-98b8a18baa47",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2500,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const notion = $input.first().json;\n\nfunction tryNode(name) {\n  try {\n    return $(name).first().json;\n  } catch (e) {\n    return null;\n  }\n}\n\nconst meta = tryNode('Enrich With Media') || tryNode('Enrich Without Media') || {};\n\nconst source_url = meta.source_url || '';\nconst body_content = meta.body_content || meta.ocr || '';\nconst tags = Array.isArray(meta.tags) ? meta.tags : [];\nconst tags_topic = Array.isArray(meta.tags_topic) ? meta.tags_topic : tags;\nconst title = meta.title || notion.name || 'capture';\nconst summary = meta.summary || '';\nconst ocr = meta.ocr || '';\nconst filename = meta.filename || '';\nconst has_image = !!meta.has_image;\nconst kdrive_url = meta.kdrive_url || '';\nconst vacuum_ok = !!meta.vacuum_ok;\nconst author = meta.author || '';\nconst medium = meta.medium || meta.outlet || '';\nconst format = meta.format || '';\n\nconst fmSource = source_url || (has_image ? 'screenshot' : 'share');\nconst tagsMd = tags_topic.map(t => '  - ' + t).join('\\n');\nlet md = '---\\n';\nmd += 'source: ' + fmSource + '\\n';\nmd += 'created: ' + new Date().toISOString() + '\\n';\nif (author) md += 'author: ' + JSON.stringify(author) + '\\n';\nif (medium) md += 'medium: ' + JSON.stringify(medium) + '\\n';\nif (format) md += 'format: ' + JSON.stringify(format) + '\\n';\nmd += 'tags:\\n' + tagsMd + '\\n';\nmd += '---\\n\\n';\nmd += '# ' + title + '\\n\\n';\nif (source_url) {\n  md += '[Page originale](' + source_url + ')\\n\\n';\n}\nmd += '## Summary\\n\\n' + summary + '\\n\\n';\nmd += '## Contenu\\n\\n' + body_content + '\\n\\n';\nif (has_image && filename) {\n  md += '![screenshot](https://n8n.example.com/media/' + filename + '.png)\\n\\n';\n}\nif (kdrive_url) {\n  md += '[Voir sur kDrive](' + kdrive_url + ')\\n';\n}\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic,\n    author,\n    medium,\n    format,\n    ocr,\n    filename,\n    source_url,\n    vacuum_ok,\n    notion_url: notion.url || '',\n    kdrive_url,\n    markdown: md,\n  },\n}];\n"
       }
     },
     {
@@ -352,12 +684,12 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        1616,
+        2700,
         0
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"title\": {{ JSON.stringify($('Edit Fields1').item.json.title) }},\n  \"markdown\": {{ JSON.stringify($('Edit Fields1').item.json.markdown) }},\n  \"notion_url\": {{ JSON.stringify($('Edit Fields1').item.json.notion_url) }},\n  \"kdrive_url\": {{ JSON.stringify($('Edit Fields1').item.json.kdrive_url) }},\n  \"summary\": {{ JSON.stringify($('Edit Fields1').item.json.summary) }},\n  \"ocr\": {{ JSON.stringify($('Edit Fields1').item.json.ocr) }},\n  \"filename\": {{ JSON.stringify($('Edit Fields1').item.json.filename) }},\n  \"tags\": {{ JSON.stringify($('Edit Fields1').item.json.tags) }}\n}",
+        "responseBody": "={\n  \"title\": {{ JSON.stringify($json.title) }},\n  \"markdown\": {{ JSON.stringify($json.markdown) }},\n  \"notion_url\": {{ JSON.stringify($json.notion_url) }},\n  \"kdrive_url\": {{ JSON.stringify($json.kdrive_url) }},\n  \"source_url\": {{ JSON.stringify($json.source_url) }},\n  \"vacuum_ok\": {{ JSON.stringify($json.vacuum_ok) }},\n  \"summary\": {{ JSON.stringify($json.summary) }},\n  \"ocr\": {{ JSON.stringify($json.ocr) }},\n  \"filename\": {{ JSON.stringify($json.filename) }},\n  \"tags\": {{ JSON.stringify($json.tags) }},\n  \"author\": {{ JSON.stringify($json.author || \"\") }},\n  \"medium\": {{ JSON.stringify($json.medium || \"\") }},\n  \"format\": {{ JSON.stringify($json.format || \"\") }}\n}",
         "options": {
           "responseCode": 200
         }
@@ -369,14 +701,25 @@
       "main": [
         [
           {
-            "node": "HTTP Request",
+            "node": "Prepare Capture",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "HTTP Request": {
+    "Prepare Capture": {
+      "main": [
+        [
+          {
+            "node": "Classify LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify LLM": {
       "main": [
         [
           {
@@ -402,7 +745,25 @@
       "main": [
         [
           {
+            "node": "Has Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Image?": {
+      "main": [
+        [
+          {
             "node": "Upload to kDrive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enrich Without Media",
             "type": "main",
             "index": 0
           }
@@ -424,25 +785,76 @@
       "main": [
         [
           {
-            "node": "Create a database page",
+            "node": "Enrich With Media",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Create a database page": {
+    "Enrich With Media": {
       "main": [
         [
           {
-            "node": "Edit Fields1",
+            "node": "Notion Path?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Edit Fields1": {
+    "Enrich Without Media": {
+      "main": [
+        [
+          {
+            "node": "Notion Path?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Path?": {
+      "main": [
+        [
+          {
+            "node": "Create Notion (with image)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Notion (no image)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion (with image)": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion (no image)": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
       "main": [
         [
           {
@@ -453,5 +865,12 @@
         ]
       ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
   }
 }
