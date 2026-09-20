@@ -39,6 +39,12 @@ Both paths can land in **Notion + Obsidian**, with a source link when available.
 
 </details>
 
+### 60-second demo (YouTube Short)
+
+[![n8n KB Capture — save articles to Notion & Obsidian from iPhone](https://img.youtube.com/vi/_3NTB-Vg0RA/maxresdefault.jpg)](https://www.youtube.com/shorts/_3NTB-Vg0RA)
+
+*Side button = what’s on screen · Share = full article — [watch the Short](https://www.youtube.com/shorts/_3NTB-Vg0RA)*
+
 ---
 
 ## What you get (power-user overview)
