@@ -2,9 +2,9 @@
   "name": "kb-capture",
   "nodes": [
     {
-      "id": "3529e2b2-84b2-4100-8dbb-2b50dc4bc33e",
+      "id": "005292bb-0740-4b7b-bff8-5cca7672bda4",
       "name": "Webhook",
-      "webhookId": "c7caae9b-2a8e-4f43-834e-b14ed91e3a33",
+      "webhookId": "66e3eca9-dbe6-4c8a-8c37-972287a98b8e",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "5fead982-cb32-4852-ac80-c0bee8ca08c8",
+      "id": "1e41e19a-023b-425b-ba05-f6b0c1d1fb15",
       "name": "Prepare Capture",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "f8862922-ee72-4b7f-b414-3221a6dbbb21",
+      "id": "c935c532-93aa-422a-b88e-f0f17a454259",
       "name": "Classify LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -70,8 +70,8 @@
       }
     },
     {
-      "id": "ccf1ab51-7468-46d0-91ae-622189ecbadd",
-      "name": "Edit Fields",
+      "id": "a0ca27c4-7a9b-4d39-9fb3-e2531ac67b33",
+      "name": "Edit Fields -1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "32864d4a-86e0-441c-bc9c-c0fd234865a6",
+      "id": "6e480221-a2ec-4259-a8b4-0ed7a5c1f701",
       "name": "Save Image to Disk",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,7 +100,7 @@
       }
     },
     {
-      "id": "ceaaf500-4e2a-4ee7-8d70-e47fe27c7d5e",
+      "id": "76356bd6-78e9-4d3f-b743-e80b1dc32f31",
       "name": "Has Image?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -118,7 +118,7 @@
           },
           "conditions": [
             {
-              "id": "7f2920b6-e3ed-410d-ad8c-0d49c03e0fb9",
+              "id": "55c31ca8-de5a-401a-ac72-8a59db9d3e3c",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "bc8afba8-3cb2-43ac-92d5-f29789b72b2a",
+      "id": "3865565c-b8c9-4bf8-b431-2fa6998b2626",
       "name": "Upload to kDrive",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -181,7 +181,7 @@
       }
     },
     {
-      "id": "e33fa419-a725-41de-93ef-dcd026c80a47",
+      "id": "a96ecb59-4b5d-403d-9348-734aa11812c2",
       "name": "Create kDrive share link",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -207,7 +207,7 @@
       }
     },
     {
-      "id": "9fc70cce-cf93-4526-a23a-7d03948d128b",
+      "id": "3e01295c-4921-4ebf-adcb-ae369594841b",
       "name": "Enrich With Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -219,91 +219,91 @@
         "assignments": {
           "assignments": [
             {
-              "id": "b4b28dfa-b9e3-4881-ac86-385f5e0b14e2",
+              "id": "3a726cca-5322-4bb4-b24e-8dcb641620ef",
               "name": "title",
               "value": "={{ $('Save Image to Disk').item.json.title }}",
               "type": "string"
             },
             {
-              "id": "d21ae73c-b54f-4fe5-9e6c-0f104b999333",
+              "id": "547e7e77-3dd8-4b6c-a461-9775d0234cbb",
               "name": "summary",
               "value": "={{ $('Save Image to Disk').item.json.summary }}",
               "type": "string"
             },
             {
-              "id": "00e22e68-513e-455b-8f50-a91ef4c5025c",
+              "id": "42048705-17bb-40e0-9a45-538705f3d2a0",
               "name": "tags",
               "value": "={{ $('Save Image to Disk').item.json.tags }}",
               "type": "array"
             },
             {
-              "id": "7a05aa4b-7fb1-40d3-9ce3-157b6287d88b",
+              "id": "630bd519-c402-4966-b7bc-d5dc3c958ca0",
               "name": "ocr",
               "value": "={{ $('Save Image to Disk').item.json.ocr }}",
               "type": "string"
             },
             {
-              "id": "2e9bd1bd-e115-44cf-b6d0-a5960bb4f1b4",
+              "id": "79bb1fbc-71d4-4d32-b2b6-5b66df3703c2",
               "name": "filename",
               "value": "={{ $('Save Image to Disk').item.json.filename }}",
               "type": "string"
             },
             {
-              "id": "8401d19e-a2f3-4187-afb4-37f77679944b",
+              "id": "557e3598-77e0-4987-8347-2ac0bff07428",
               "name": "source_url",
               "value": "={{ $('Save Image to Disk').item.json.source_url }}",
               "type": "string"
             },
             {
-              "id": "cd594587-ef04-476d-add1-b41f7a0f1696",
+              "id": "2518d7d5-985b-4090-9c2d-0cfd604676a1",
               "name": "full_text",
               "value": "={{ $('Save Image to Disk').item.json.full_text }}",
               "type": "string"
             },
             {
-              "id": "0c4ddf0c-79ac-4b52-b5fe-b745bcbc625c",
+              "id": "874dabcd-7ad2-4429-aa69-29b61d283403",
               "name": "vacuum_ok",
               "value": "={{ $('Save Image to Disk').item.json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "8c07dd6a-01a3-46cb-b2bf-c52232fab5fb",
+              "id": "63e481c1-ede9-46ff-a388-91be943846b9",
               "name": "body_content",
               "value": "={{ $('Save Image to Disk').item.json.body_content }}",
               "type": "string"
             },
             {
-              "id": "bb9e142e-6cc5-4e67-982b-ee09cdb26082",
+              "id": "73a88646-f9be-41d4-9d10-022a4889f9e3",
               "name": "has_image",
               "value": true,
               "type": "boolean"
             },
             {
-              "id": "90339851-d713-4add-925e-623f2c4270d0",
+              "id": "134ae906-0b6f-45d8-87b1-0f86fee72674",
               "name": "kdrive_url",
               "value": "={{ $json.data.url }}",
               "type": "string"
             },
             {
-              "id": "46b5872e-2792-41a5-a303-1fc6546896f7",
+              "id": "093e92e9-24e6-42c5-810f-cd1a3b91f04c",
               "name": "author",
               "value": "={{ $('Save Image to Disk').item.json.author }}",
               "type": "string"
             },
             {
-              "id": "dfd56c7e-062f-48fb-9706-d2c19b03247e",
+              "id": "34e3f750-0e55-4112-be0f-0b16259bf928",
               "name": "format",
               "value": "={{ $('Save Image to Disk').item.json.format }}",
               "type": "string"
             },
             {
-              "id": "77148e54-927c-4ed2-9fab-8a5d2230b24a",
+              "id": "ef1b9483-52e6-404d-807c-1e9d64860420",
               "name": "tags_topic",
               "value": "={{ $('Save Image to Disk').item.json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "c71999a9-5086-449d-b62d-2bc3ca5f7ed0",
+              "id": "d68732b6-7969-48bd-803a-3ed60c5d520f",
               "name": "medium",
               "value": "={{ $('Save Image to Disk').item.json.medium }}",
               "type": "string"
@@ -314,7 +314,7 @@
       }
     },
     {
-      "id": "bf69d928-660a-46d4-9724-bee769235630",
+      "id": "be818c14-d569-4aa9-9c1f-6972ddf8ad46",
       "name": "Enrich Without Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -326,91 +326,91 @@
         "assignments": {
           "assignments": [
             {
-              "id": "8d1c211d-d512-410f-b86a-7d6d5c037298",
+              "id": "a05d8cec-2fe7-4605-87b2-16d02fca535b",
               "name": "title",
               "value": "={{ $json.title }}",
               "type": "string"
             },
             {
-              "id": "206c299b-11fb-4bfb-9fbc-36753e1c1619",
+              "id": "7146169a-cefd-4072-93ad-642bd5637687",
               "name": "summary",
               "value": "={{ $json.summary }}",
               "type": "string"
             },
             {
-              "id": "ffd9362d-21ca-476c-a1c3-00ab778cca90",
+              "id": "21c33e88-c892-482a-b9a9-70c35315444d",
               "name": "tags",
               "value": "={{ $json.tags }}",
               "type": "array"
             },
             {
-              "id": "21b32274-09e0-4a9a-aa71-d3b97a95c175",
+              "id": "7daa79a2-cea4-45b8-b448-df4385083ea9",
               "name": "ocr",
               "value": "={{ $json.ocr }}",
               "type": "string"
             },
             {
-              "id": "5ab6cb6a-1fc7-4973-8e28-3eec3ca3e413",
+              "id": "6b569e07-80f0-4987-9e81-418a0f100959",
               "name": "filename",
               "value": "={{ $json.filename }}",
               "type": "string"
             },
             {
-              "id": "de0122f1-4484-4509-bbac-baa873dd50e0",
+              "id": "0d8af592-a5ed-4894-a932-db5a950c5eeb",
               "name": "source_url",
               "value": "={{ $json.source_url }}",
               "type": "string"
             },
             {
-              "id": "9c17be1e-3a9d-4faf-9013-c8a805f61845",
+              "id": "fa21ede6-da1d-479b-ab0e-182dab700b74",
               "name": "full_text",
               "value": "={{ $json.full_text }}",
               "type": "string"
             },
             {
-              "id": "967a760f-c95d-4c65-9133-2e03ce6f35a5",
+              "id": "44afa214-9b83-47e0-b34c-47c14cddc5e3",
               "name": "vacuum_ok",
               "value": "={{ $json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "36b389d3-1c6f-488f-8d2e-f93d4fb76df3",
+              "id": "fe234b47-fa4e-46bc-9fb4-54f27e63245c",
               "name": "body_content",
               "value": "={{ $json.body_content }}",
               "type": "string"
             },
             {
-              "id": "a33d0018-5654-4e5c-aabb-00f665f986b4",
+              "id": "121c03d0-2317-46d4-bda6-5f60f532f9f1",
               "name": "has_image",
               "value": false,
               "type": "boolean"
             },
             {
-              "id": "e28f8549-06ed-46ba-b6d0-d7ec6a87a709",
+              "id": "49d4cdee-6f80-41cb-a693-62ea5c1828ca",
               "name": "kdrive_url",
               "value": "",
               "type": "string"
             },
             {
-              "id": "522ff611-00e4-48ac-acbb-25658544aedd",
+              "id": "4692d698-93b3-4bfc-bcae-cc29e75f2dfd",
               "name": "author",
               "value": "={{ $json.author }}",
               "type": "string"
             },
             {
-              "id": "6ae77dd8-bd3a-4c85-ba60-69fd36248252",
+              "id": "53564226-235d-44ca-af3f-1066f77f30f7",
               "name": "format",
               "value": "={{ $json.format }}",
               "type": "string"
             },
             {
-              "id": "88071acb-c4ad-45af-9c7e-2230f0d26c2c",
+              "id": "d84f8178-9b26-42d5-8e78-db0a1d8ccb8a",
               "name": "tags_topic",
               "value": "={{ $json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "88e32392-68d3-41a7-88ea-7ceac562ad9b",
+              "id": "cae5a1d0-573f-419b-92b5-aca3d22ef50a",
               "name": "medium",
               "value": "={{ $json.medium }}",
               "type": "string"
@@ -421,7 +421,7 @@
       }
     },
     {
-      "id": "533d6e8d-76c7-452f-a85f-1cc85d245f33",
+      "id": "62e68273-65c1-47b3-aa4c-25d90e125465",
       "name": "Notion Path?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -439,7 +439,7 @@
           },
           "conditions": [
             {
-              "id": "be88b912-0b91-4897-b084-8e30b00ba16c",
+              "id": "d5a031ec-7376-49aa-a155-0145373e6903",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -455,7 +455,7 @@
       }
     },
     {
-      "id": "c9d21046-681e-4bfc-b603-6a76e1be1ac6",
+      "id": "f2bcaa4c-b362-4e56-90cb-f572a372ab06",
       "name": "Create Notion (with image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -568,7 +568,7 @@
       }
     },
     {
-      "id": "34d58c23-3821-498a-9a74-a0c30c2853c7",
+      "id": "790a9382-b228-4ba5-a64c-7e27a3db22fd",
       "name": "Create Notion (no image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -664,7 +664,7 @@
       }
     },
     {
-      "id": "7efded13-21cb-4805-bafc-98b8a18baa47",
+      "id": "f56e2203-3931-481b-85de-7b192f85e498",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -679,7 +679,7 @@
       }
     },
     {
-      "id": "82165afb-8332-4a59-ad63-489d99106829",
+      "id": "20828a5d-7bc6-4bba-aae2-70f5feda4cfd",
       "name": "Respond to Webhook1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -723,14 +723,14 @@
       "main": [
         [
           {
-            "node": "Edit Fields",
+            "node": "Edit Fields -1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Edit Fields": {
+    "Edit Fields -1": {
       "main": [
         [
           {

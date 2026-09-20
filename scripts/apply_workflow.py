@@ -3,14 +3,14 @@ PUT payload: {name, nodes, connections, settings} — no versionId, no active.
 Changes:
   1. New node 'Create kDrive share link' (POST /2/drive/{id}/files/{fid}/link, right=public).
   2. Linear chain: Save Image to Disk -> Upload to kDrive -> Create kDrive share link
-     -> Create a database page -> Edit Fields1 -> Respond to Webhook1.
+     -> Create a database page -> Edit Fields -2 -> Respond to Webhook1.
   3. Notion page: date property fixed (range: false, date: $now.toISO()), Files & media
      -> kDrive public share URL, all property expressions re-sourced from Save Image to Disk,
      body blocks (OCR paragraph + inline image) inlined via contentType blockUi.
   4. Append Notion Children removed (content now created with the page in one call).
-  5. Edit Fields1: explicit assignments incl. notion_url + kdrive_url + markdown with image links.
+  5. Edit Fields -2: explicit assignments incl. notion_url + kdrive_url + markdown with image links.
   6. Respond to Webhook1: JSON with title, markdown, notion_url, kdrive_url (+summary, ocr, filename, tags).
-  7. Edit Fields: filename fallback if AI omits it.
+  7. Edit Fields -1: filename fallback if AI omits it.
 """
 import copy
 import json
@@ -48,8 +48,8 @@ share_node = {
     },
 }
 
-# ---------------------------------------------------------------- 2. Edit Fields: filename fallback
-ef = nodes["Edit Fields"]["parameters"]["assignments"]["assignments"]
+# ---------------------------------------------------------------- 2. Edit Fields -1: filename fallback
+ef = nodes["Edit Fields -1"]["parameters"]["assignments"]["assignments"]
 for a in ef:
     if a["name"] == "filename":
         a["value"] = ("={{ JSON.parse($json.choices[0].message.content).filename "
@@ -123,7 +123,7 @@ notion["parameters"]["blockUi"] = {
     ]
 }
 
-# ---------------------------------------------------------------- 4. Edit Fields1 (explicit)
+# ---------------------------------------------------------------- 4. Edit Fields -2 (explicit)
 sid = "$('Save Image to Disk').item.json"
 kd = "$('Create kDrive share link').item.json.data.url"
 markdown_expr = (
@@ -142,7 +142,7 @@ markdown_expr = (
     "[View on kDrive](" + kd + ")\n"
     "` }}"
 )
-ef1 = nodes["Edit Fields1"]
+ef1 = nodes["Edit Fields -2"]
 ef1["position"] = [1424, 0]
 ef1["parameters"] = {
     "assignments": {
@@ -171,7 +171,7 @@ ef1["parameters"] = {
 # ---------------------------------------------------------------- 5. Respond node
 resp = nodes["Respond to Webhook1"]
 resp["position"] = [1616, 0]
-E1 = "$('Edit Fields1').item.json"
+E1 = "$('Edit Fields -2').item.json"
 resp["parameters"] = {
     "respondWith": "json",
     "responseBody": (
@@ -193,12 +193,12 @@ resp["parameters"] = {
 wf["nodes"] = [
     nodes["Webhook"],
     nodes["HTTP Request"],
-    nodes["Edit Fields"],
+    nodes["Edit Fields -1"],
     nodes["Save Image to Disk"],
     nodes["Upload to kDrive"],
     share_node,
     nodes["Create a database page"],
-    nodes["Edit Fields1"],
+    nodes["Edit Fields -2"],
     nodes["Respond to Webhook1"],
 ]
 # drop "Append Notion Children" (content now inlined in page create)
@@ -209,13 +209,13 @@ def conn(target):
 
 chain = [
     ("Webhook", "HTTP Request"),
-    ("HTTP Request", "Edit Fields"),
-    ("Edit Fields", "Save Image to Disk"),
+    ("HTTP Request", "Edit Fields -1"),
+    ("Edit Fields -1", "Save Image to Disk"),
     ("Save Image to Disk", "Upload to kDrive"),
     ("Upload to kDrive", "Create kDrive share link"),
     ("Create kDrive share link", "Create a database page"),
-    ("Create a database page", "Edit Fields1"),
-    ("Edit Fields1", "Respond to Webhook1"),
+    ("Create a database page", "Edit Fields -2"),
+    ("Edit Fields -2", "Respond to Webhook1"),
 ]
 wf["connections"] = {src: {"main": [conn(dst)]} for src, dst in chain}
 

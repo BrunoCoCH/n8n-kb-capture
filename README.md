@@ -98,7 +98,7 @@ Main stages:
 1. **Webhook** — `POST /kb-capture`, header auth (`X-KB-capture-token`)
 2. **Prepare Capture** — normalizes `text` / `source_url` / image; optional reader vacuum; cookie/junk cleanup
 3. **Classify LLM** — JSON schema: `title`, `summary`, `tags`, `author`, `medium`, `format`, `filename`
-4. **Edit Fields** — polish topics; strip author/medium/format out of Tags; derive medium from URL when useful
+4. **Edit Fields -1** — polish topics; strip author/medium/format out of Tags; derive medium from URL when useful
 5. **Has Image?** — with image → save + kDrive; without → Notion-only path
 6. **Create Notion** — properties including **Author**, **Medium**, **Format**; Tags = topics only
 7. **Build Response** — Obsidian front-matter (`author`, `medium`, `format`, `tags`, `source`) + markdown body
