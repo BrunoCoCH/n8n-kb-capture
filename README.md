@@ -41,7 +41,9 @@ Both paths can land in **Notion + Obsidian**, with a source link when available.
 
 ### 60-second demo (YouTube Short)
 
-[![n8n KB Capture — save articles to Notion & Obsidian from iPhone](https://img.youtube.com/vi/_3NTB-Vg0RA/maxresdefault.jpg)](https://www.youtube.com/shorts/_3NTB-Vg0RA)
+[![n8n KB Capture — save articles to Notion & Obsidian from iPhone](https://img.youtube.com/vi/_3NTB-Vg0RA/hqdefault.jpg)](https://www.youtube.com/shorts/_3NTB-Vg0RA)
+
+This video shows the **side-button / screenshot** case only (OCR of what you see on screen) — not the Share Sheet path that pulls the full article from the site.
 
 *Side button = what’s on screen · Share = full article — [watch the Short](https://www.youtube.com/shorts/_3NTB-Vg0RA)*
 
