@@ -49,6 +49,106 @@ This video shows the **side-button / screenshot** case only (OCR of what you see
 
 ---
 
+## How to use this repo (build your own automation)
+
+Skill-gradient friendly path: fork or clone this repo, wire credentials, deploy, then rebuild the iOS Shortcut from the checklist below. French Shortcuts UI labels are in parentheses where helpful.
+
+### Overview of steps
+
+1. **Import** [`workflow/kb-capture.json`](workflow/kb-capture.json) into your n8n instance (*Import from file*).
+2. **Attach credentials** wherever you see `REPLACE_ME` (Webhook header auth, LLM Bearer, optional kDrive header auth, Notion API).
+3. **Set the webhook URL** you’ll call from the phone: `https://YOUR-N8N/webhook/kb-capture` (test path: `/webhook-test/kb-capture`).
+4. **Prepare a Notion Inbox database** with at least: Title, Summary, **Tags** (topics only), **Author**, **Medium**, **Format**, Source, URL (plus optional Text / Files & media). Share the DB with your Notion integration.
+5. **Optional:** Infomaniak kDrive for screenshot upload + public share links (`<DRIVE_ID>`, `<DIRECTORY_ID>` placeholders in the workflow).
+6. **Deploy n8n** behind a public HTTPS reverse proxy (raise multipart body size — see [Setup](#setup-technical) below).
+7. **Build the iOS Shortcut** (one Shortcut + IF for both Share and side-button paths) using the checklist.
+
+### iOS Shortcut — rebuild checklist
+
+Create **one** Shortcut that handles both launch modes with an **If** (*Si*).
+
+#### Shortcut settings
+
+1. Name the Shortcut (e.g. `KB Capture`).
+2. Enable **Show in Share Sheet** (*Afficher dans la feuille de partage*).
+3. Accepted types: **URLs**, **Text**, **Images** (*URL*, *Texte*, *Images*).
+4. Assign it to the **Action Button** / side button (*Bouton Action*) if you want the direct / screenshot path.
+
+#### Branch: Share vs side button
+
+5. **If** (*Si*): **URLs from Shortcut Input** (*URL du contenu du Raccourci*) **has any value** (*a une valeur*) → **Share path**; **Otherwise** (*Sinon*) → **Side-button path**.
+
+#### Share path (true branch)
+
+6. **Get URLs from Input** (*Obtenir les URL du contenu d’entrée*) → store as variable `source_url`.
+7. **Get Text from Input** (*Obtenir le texte du contenu d’entrée*) → store as variable `text`.
+8. Optionally **Get Images from Input** (*Obtenir les images…*) if the share includes an image → variable `file`.
+
+#### Side-button path (false / Otherwise branch)
+
+9. **Take Screenshot** (*Prendre une capture d’écran*) → variable `file` (the screenshot).
+10. **Extract Text from Image** (*Extraire le texte de l’image*) on that screenshot → variable `text` (OCR).
+11. **Get Clipboard** (*Obtenir le presse-papiers*).
+12. Optionally: if the clipboard is a URL, set `source_url` from it (else leave empty).
+
+#### Common path (after the If / merge)
+
+13. Ensure variables exist: `text`, `file` (screenshot or shared image; may be empty), `source_url` (may be empty).
+14. **Get Contents of URL** (*Obtenir le contenu de l’URL*):
+    - Method: **POST**
+    - URL: `https://YOUR-N8N/webhook/kb-capture`
+    - Headers: `X-KB-capture-token` = your token (**no space before `:`** — see [Gotchas](#gotchas))
+    - Request body: **Form** (*Formulaire*) with fields:
+      - `text` → variable `text`
+      - `file` → variable `file` (file / image)
+      - `source_url` → variable `source_url`
+15. **Get Dictionary from Input** (*Obtenir un dictionnaire du contenu d’entrée*) — JSON parse workaround if the response is treated as Rich Text; if it fails, insert **Text** / **Set Variable** first (see [Gotchas](#gotchas)).
+16. **Get Dictionary Value** (*Obtenir la valeur du dictionnaire*) for at least:
+    - `filename` (note title)
+    - `markdown` (note body)
+    - optionally `notion_url`, `source_url`
+17. **URL Encode** (*Encoder en URL*) the markdown (and the title/filename if needed).
+18. Build a **Text** / **URL** for the Obsidian deep link, e.g. `obsidian://new?vault=YOUR_VAULT&name=ENCODED_TITLE&content=ENCODED_MARKDOWN`.
+19. **Open URL** (*Ouvrir l’URL*) → creates/opens the note in Obsidian.
+20. Optional for debug: **Show Result** (*Afficher le résultat*) or **Show Alert** (*Afficher une alerte*) with `notion_url` / errors.
+
+> Reminder: the [YouTube Short](https://www.youtube.com/shorts/_3NTB-Vg0RA) demos the **screenshot / side-button** path only — not Share.
+
+### n8n nodes in this workflow
+
+Exact names from [`workflow/kb-capture.json`](workflow/kb-capture.json):
+
+| # | Node | Role |
+|---|------|------|
+| 1 | **Webhook** | Receives multipart `POST` (`text`, `file`, `source_url`) with header auth |
+| 2 | **Prepare Capture** | Normalizes inputs; optional URL “vacuum” / reader; cleanup |
+| 3 | **Classify LLM** | HTTP call to the LLM → title, summary, tags, author, medium, format, filename |
+| 4 | **Edit Fields -1** | Polishes topics; keeps Tags = topics only; derives medium when useful |
+| 5 | **Has Image?** | Branches: with screenshot vs text/URL only |
+| 6 | **Save Image to Disk** | Writes the uploaded image to a temp path (image branch) |
+| 7 | **Upload to kDrive** | Uploads the screenshot (optional; needs kDrive creds) |
+| 8 | **Create kDrive share link** | Public share URL for the file |
+| 9 | **Enrich With Media** | Sets fields including `kdrive_url` when an image was stored |
+| 10 | **Enrich Without Media** | Same enrichment without media URLs |
+| 11 | **Notion Path?** | Chooses Notion create with vs without attached file |
+| 12 | **Create Notion (with image)** | Creates the Inbox page + file attachment |
+| 13 | **Create Notion (no image)** | Creates the Inbox page without a file |
+| 14 | **Build Response** | Assembles Obsidian front-matter + markdown JSON for the Shortcut |
+| 15 | **Respond to Webhook1** | Returns JSON (`filename`, `markdown`, `notion_url`, …) |
+
+### Use an AI assistant
+
+You do **not** need to be an n8n or Shortcuts expert. It is normal — and encouraged — to paste this README plus `workflow/kb-capture.json` into **Cursor**, **ChatGPT**, or **Claude** and ask it to:
+
+- Map your Notion property names to the workflow (Tags = topics only; **Medium** not “Outlet”; Author; Format; URL)
+- Fix iOS Shortcuts errors (Rich Text → Dictionary, header colon spacing, Form field names)
+- Swap placeholders for your webhook URL and token (keep secrets out of chat when you can)
+- Read a failed n8n execution and suggest the next fix
+
+Treat the assistant as a pair-programmer for the fiddly bits; you still own credentials and deploy.
+
+---
+
 ## What you get (power-user overview)
 
 ### Dual entry on iPhone
