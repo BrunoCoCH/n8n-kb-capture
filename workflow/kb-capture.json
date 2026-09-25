@@ -2,9 +2,9 @@
   "name": "kb-capture",
   "nodes": [
     {
-      "id": "005292bb-0740-4b7b-bff8-5cca7672bda4",
+      "id": "09f222c0-5711-42b9-9c33-5a4169546939",
       "name": "Webhook",
-      "webhookId": "66e3eca9-dbe6-4c8a-8c37-972287a98b8e",
+      "webhookId": "98ff91b2-69a9-42c6-a336-cfc36f8039a1",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "1e41e19a-023b-425b-ba05-f6b0c1d1fb15",
+      "id": "b74e24a6-3807-47d2-befd-f353bfc521ca",
       "name": "Prepare Capture",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -40,11 +40,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const item = $input.first();\nconst body = item.json.body || {};\nlet text = (body.text ?? '').toString();\nlet source_url = (body.source_url ?? body.sourceUrl ?? '').toString().trim();\n\n/**\n * Shared text cleanup for kb-capture (Jina vacuum + OCR).\n * Used by unit tests; inlined into Prepare Capture Code node.\n */\nfunction cleanExtractedText(raw) {\n  if (raw == null) return '';\n  let s = String(raw);\n  if (!s.trim()) return '';\n\n  // 1) script/style out entirely\n  s = s.replace(/<script\\b[\\s\\S]*?<\\/script>/gi, ' ');\n  s = s.replace(/<style\\b[\\s\\S]*?<\\/style>/gi, ' ');\n  s = s.replace(/<noscript\\b[\\s\\S]*?<\\/noscript>/gi, ' ');\n\n  // 2) unwrap strikethrough HTML (keep inner text)\n  s = s.replace(/<(?:s|strike|del)\\b[^>]*>([\\s\\S]*?)<\\/(?:s|strike|del)>/gi, '$1');\n  s = s.replace(/<\\/?(?:s|strike|del)\\b[^>]*>/gi, '');\n\n  // 3) strip remaining HTML tags, keep text\n  s = s.replace(/<!--[\\s\\S]*?-->/g, ' ');\n  s = s.replace(/<\\/?[a-zA-Z][^>]*>/g, ' ');\n\n  // 4) markdown strikethrough ~~...~~ → keep text\n  s = s.replace(/~~([^~\\n]{0,400})~~/g, '$1');\n\n  // 5) zero-width / BOM / soft hyphen junk\n  s = s.replace(/[\\u200B-\\u200D\\uFEFF\\u00AD]/g, '');\n\n  // 6) orphan bracket tags like [/...] leftover from broken markup\n  s = s.replace(/\\[\\/[^\\]]{0,60}\\]/g, ' ');\n  // leftover bare angle fragments that aren't real words\n  s = s.replace(/<\\/?[a-zA-Z][^>\\n]{0,40}>/g, ' ');\n\n  // 7) Jina Reader chrome — prefer body after \"Markdown Content:\"\n  const mdMatch = s.match(/^Markdown Content:\\s*/im);\n  if (mdMatch && typeof mdMatch.index === 'number') {\n    const titleMatch = s.match(/^Title:\\s*(.+)$/m);\n    const title = titleMatch ? titleMatch[1].trim() : '';\n    s = s.slice(mdMatch.index + mdMatch[0].length);\n    if (title) {\n      const head = s.trim().slice(0, Math.min(60, title.length));\n      if (!title.startsWith(head) && !s.trim().startsWith('#')) {\n        s = title + '\\n\\n' + s;\n      }\n    }\n  } else {\n    s = s.replace(/^(Title|URL Source|Published Time|Markdown Content):\\s*.*$/gim, '');\n  }\n\n  const BANNER_PHRASE =\n    /accepter (les |tous les )?cookies|accept(\\s+all)?\\s+cookies|reject\\s+all|manage (cookie )?preferences|nous utilisons des cookies|this site uses cookies|privacy center|consent management|cookiebot|onetrust|didomi|politique de confidentialit[eé]|privacy policy|tracking technologies|adchoices|gestion des cookies|param[eè]tres (des |de )?cookies/i;\n\n  const CONSENT_TOKEN =\n    /cookies?|consentement|consent|accepter|accept all|reject all|manage preferences|politique de confidentialit[eé]|privacy policy|nous utilisons des cookies|this site uses cookies|\\bGDPR\\b|\\bRGPD\\b|OneTrust|Cookiebot|Didomi|consent management|privacy center|tracking technologies|essential cookies|targeted advertising|adchoices|social media services|core website features|gestion des cookies|pr[eé]f[eé]rences/gi;\n\n  const CMP_HEADER =\n    /^(Privacy Center|Social Media|Essential|Targeted|Performance|Functional|Marketing|Strictly Necessary|Cookie Settings|Manage Consent|Gestion des cookies|Centre de confidentialit[eé]|Pr[eé]f[eé]rences de cookies)$/i;\n\n  function consentScore(p) {\n    const m = p.match(CONSENT_TOKEN);\n    return m ? m.length : 0;\n  }\n\n  // 8) drop consent-heavy paragraphs (blocks, not every \"cookie\" mention)\n  function isConsentBlock(t) {\n    if (!t) return false;\n    if (CMP_HEADER.test(t) && t.length < 80) return true;\n    if (BANNER_PHRASE.test(t) && t.length < 1200) return true;\n    const score = consentScore(t);\n    // heavy consent vocabulary → block\n    if (score >= 2) return true;\n    // short banner-like blurbs with classic consent phrasing\n    if (score >= 1 && t.length < 280 && BANNER_PHRASE.test(t)) return true;\n    return false;\n  }\n\n  let paras = s.split(/\\n\\s*\\n+/);\n  paras = paras.filter((p) => !isConsentBlock(p.trim()));\n\n  // drop leading short CMP chrome (headers / toggle rows) at document start\n  while (paras.length) {\n    const t = paras[0].trim();\n    if (!t) {\n      paras.shift();\n      continue;\n    }\n    if (CMP_HEADER.test(t)) {\n      paras.shift();\n      continue;\n    }\n    if (isConsentBlock(t)) {\n      paras.shift();\n      continue;\n    }\n    if (/^(- \\[[ xX]\\]\\s*On\\s*)+$/m.test(t)) {\n      paras.shift();\n      continue;\n    }\n    break;\n  }\n\n  s = paras.join('\\n\\n');\n\n  // line-level CMP chrome\n  s = s\n    .split('\\n')\n    .filter((line) => {\n      const t = line.trim();\n      if (!t) return true;\n      if (/^- \\[[ xX]\\]\\s*On\\s*$/.test(t)) return false;\n      if (/^\\*\\s*\\*\\s*\\*$/.test(t) || /^\\*{3,}$/.test(t)) return false;\n      if (CMP_HEADER.test(t)) return false;\n      if (BANNER_PHRASE.test(t) && t.length < 220) return false;\n      return true;\n    })\n    .join('\\n');\n\n  // 9) whitespace normalize\n  s = s.replace(/[ \\t]+/g, ' ');\n  s = s.replace(/ *\\n */g, '\\n');\n  s = s.replace(/\\n{3,}/g, '\\n\\n');\n  return s.trim();\n}\n\n// Avoid `new URL()` — unavailable / unreliable in some n8n Code sandboxes.\nif (!/^https?:\\/\\/[^\\s<>\"{}|\\\\^`[\\]]+$/i.test(source_url)) {\n  source_url = '';\n} else {\n  source_url = source_url.replace(/[.,);]+$/g, '');\n}\n\nconst bin = item.binary || {};\nlet has_image = false;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.mimeType && String(b.mimeType).startsWith('image/')) {\n    has_image = true;\n    break;\n  }\n}\nif (!has_image) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      has_image = true;\n      break;\n    }\n  }\n}\n\nif (!text && !source_url && !has_image) {\n  throw new Error('Need at least one of: text, source_url, or image file');\n}\n\nlet full_text_raw = '';\nlet full_text = '';\nlet vacuum_ok = false;\nlet vacuum_error = '';\nif (source_url) {\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://r.jina.ai/' + source_url,\n      headers: {\n        Accept: 'text/plain',\n        'User-Agent': 'kb-capture/1.0',\n      },\n      timeout: 20000,\n    });\n    full_text_raw = typeof res === 'string' ? res : String(res ?? '');\n    full_text = cleanExtractedText(full_text_raw);\n    vacuum_ok = full_text.trim().length >= 80;\n    if (!vacuum_ok) vacuum_error = 'vacuum_too_short';\n  } catch (e) {\n    full_text_raw = '';\n    full_text = '';\n    vacuum_ok = false;\n    vacuum_error = (e && e.message) ? String(e.message).slice(0, 200) : 'vacuum_failed';\n  }\n}\n\nconst text_clean = cleanExtractedText(text);\n\nconst content_for_llm = (\n  vacuum_ok ? full_text : (text_clean || source_url || 'capture sans texte')\n).slice(0, 12000);\n\nconst body_content = vacuum_ok ? full_text : text_clean;\n\nreturn [{\n  json: {\n    text: text_clean,\n    text_raw: text,\n    source_url,\n    has_image,\n    full_text,\n    full_text_raw,\n    full_text_clean: full_text,\n    vacuum_ok,\n    vacuum_error,\n    content_for_llm,\n    body_content,\n  },\n  binary: item.binary,\n}];\n"
+        "jsCode": "const item = $input.first();\nconst body = item.json.body || {};\nlet text = (body.text ?? '').toString();\nlet source_url = (body.source_url ?? body.sourceUrl ?? '').toString().trim();\n\n/**\n * Shared text cleanup for kb-capture (Jina vacuum + OCR).\n * Used by unit tests; inlined into Prepare Capture Code node.\n */\nfunction cleanExtractedText(raw) {\n  if (raw == null) return '';\n  let s = String(raw);\n  if (!s.trim()) return '';\n\n  // 1) script/style out entirely\n  s = s.replace(/<script\\b[\\s\\S]*?<\\/script>/gi, ' ');\n  s = s.replace(/<style\\b[\\s\\S]*?<\\/style>/gi, ' ');\n  s = s.replace(/<noscript\\b[\\s\\S]*?<\\/noscript>/gi, ' ');\n\n  // 2) unwrap strikethrough HTML (keep inner text)\n  s = s.replace(/<(?:s|strike|del)\\b[^>]*>([\\s\\S]*?)<\\/(?:s|strike|del)>/gi, '$1');\n  s = s.replace(/<\\/?(?:s|strike|del)\\b[^>]*>/gi, '');\n\n  // 3) strip remaining HTML tags, keep text\n  s = s.replace(/<!--[\\s\\S]*?-->/g, ' ');\n  s = s.replace(/<\\/?[a-zA-Z][^>]*>/g, ' ');\n\n  // 4) markdown strikethrough ~~...~~ → keep text\n  s = s.replace(/~~([^~\\n]{0,400})~~/g, '$1');\n\n  // 5) zero-width / BOM / soft hyphen junk\n  s = s.replace(/[\\u200B-\\u200D\\uFEFF\\u00AD]/g, '');\n\n  // 6) orphan bracket tags like [/...] leftover from broken markup\n  s = s.replace(/\\[\\/[^\\]]{0,60}\\]/g, ' ');\n  // leftover bare angle fragments that aren't real words\n  s = s.replace(/<\\/?[a-zA-Z][^>\\n]{0,40}>/g, ' ');\n\n  // 7) Jina Reader chrome — prefer body after \"Markdown Content:\"\n  const mdMatch = s.match(/^Markdown Content:\\s*/im);\n  if (mdMatch && typeof mdMatch.index === 'number') {\n    const titleMatch = s.match(/^Title:\\s*(.+)$/m);\n    const title = titleMatch ? titleMatch[1].trim() : '';\n    s = s.slice(mdMatch.index + mdMatch[0].length);\n    if (title) {\n      const head = s.trim().slice(0, Math.min(60, title.length));\n      if (!title.startsWith(head) && !s.trim().startsWith('#')) {\n        s = title + '\\n\\n' + s;\n      }\n    }\n  } else {\n    s = s.replace(/^(Title|URL Source|Published Time|Markdown Content):\\s*.*$/gim, '');\n  }\n\n  const BANNER_PHRASE =\n    /accepter (les |tous les )?cookies|accept(\\s+all)?\\s+cookies|reject\\s+all|manage (cookie )?preferences|nous utilisons des cookies|this site uses cookies|privacy center|consent management|cookiebot|onetrust|didomi|politique de confidentialit[eé]|privacy policy|tracking technologies|adchoices|gestion des cookies|param[eè]tres (des |de )?cookies/i;\n\n  const CONSENT_TOKEN =\n    /cookies?|consentement|consent|accepter|accept all|reject all|manage preferences|politique de confidentialit[eé]|privacy policy|nous utilisons des cookies|this site uses cookies|\\bGDPR\\b|\\bRGPD\\b|OneTrust|Cookiebot|Didomi|consent management|privacy center|tracking technologies|essential cookies|targeted advertising|adchoices|social media services|core website features|gestion des cookies|pr[eé]f[eé]rences/gi;\n\n  const CMP_HEADER =\n    /^(Privacy Center|Social Media|Essential|Targeted|Performance|Functional|Marketing|Strictly Necessary|Cookie Settings|Manage Consent|Gestion des cookies|Centre de confidentialit[eé]|Pr[eé]f[eé]rences de cookies)$/i;\n\n  function consentScore(p) {\n    const m = p.match(CONSENT_TOKEN);\n    return m ? m.length : 0;\n  }\n\n  // 8) drop consent-heavy paragraphs (blocks, not every \"cookie\" mention)\n  function isConsentBlock(t) {\n    if (!t) return false;\n    if (CMP_HEADER.test(t) && t.length < 80) return true;\n    if (BANNER_PHRASE.test(t) && t.length < 1200) return true;\n    const score = consentScore(t);\n    // heavy consent vocabulary → block\n    if (score >= 2) return true;\n    // short banner-like blurbs with classic consent phrasing\n    if (score >= 1 && t.length < 280 && BANNER_PHRASE.test(t)) return true;\n    return false;\n  }\n\n  let paras = s.split(/\\n\\s*\\n+/);\n  paras = paras.filter((p) => !isConsentBlock(p.trim()));\n\n  // drop leading short CMP chrome (headers / toggle rows) at document start\n  while (paras.length) {\n    const t = paras[0].trim();\n    if (!t) {\n      paras.shift();\n      continue;\n    }\n    if (CMP_HEADER.test(t)) {\n      paras.shift();\n      continue;\n    }\n    if (isConsentBlock(t)) {\n      paras.shift();\n      continue;\n    }\n    if (/^(- \\[[ xX]\\]\\s*On\\s*)+$/m.test(t)) {\n      paras.shift();\n      continue;\n    }\n    break;\n  }\n\n  s = paras.join('\\n\\n');\n\n  // line-level CMP chrome\n  s = s\n    .split('\\n')\n    .filter((line) => {\n      const t = line.trim();\n      if (!t) return true;\n      if (/^- \\[[ xX]\\]\\s*On\\s*$/.test(t)) return false;\n      if (/^\\*\\s*\\*\\s*\\*$/.test(t) || /^\\*{3,}$/.test(t)) return false;\n      if (CMP_HEADER.test(t)) return false;\n      if (BANNER_PHRASE.test(t) && t.length < 220) return false;\n      return true;\n    })\n    .join('\\n');\n\n  // 9) whitespace normalize\n  s = s.replace(/[ \\t]+/g, ' ');\n  s = s.replace(/ *\\n */g, '\\n');\n  s = s.replace(/\\n{3,}/g, '\\n\\n');\n  return s.trim();\n}\n\n// Avoid `new URL()` — unavailable / unreliable in some n8n Code sandboxes.\nif (!/^https?:\\/\\/[^\\s<>\"{}|\\\\^`[\\]]+$/i.test(source_url)) {\n  source_url = '';\n} else {\n  source_url = source_url.replace(/[.,);]+$/g, '');\n}\n\nconst bin = item.binary || {};\nlet has_image = false;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.mimeType && String(b.mimeType).startsWith('image/')) {\n    has_image = true;\n    break;\n  }\n}\nif (!has_image) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      has_image = true;\n      break;\n    }\n  }\n}\n\nif (!text && !source_url && !has_image) {\n  throw new Error('Need at least one of: text, source_url, or image file');\n}\n\nlet full_text_raw = '';\nlet full_text = '';\nlet vacuum_ok = false;\nlet vacuum_error = '';\nif (source_url) {\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://r.jina.ai/' + source_url,\n      headers: {\n        Accept: 'text/plain',\n        'User-Agent': 'kb-capture/1.0',\n      },\n      timeout: 20000,\n    });\n    full_text_raw = typeof res === 'string' ? res : String(res ?? '');\n    full_text = cleanExtractedText(full_text_raw);\n    vacuum_ok = full_text.trim().length >= 80;\n    if (!vacuum_ok) vacuum_error = 'vacuum_too_short';\n  } catch (e) {\n    full_text_raw = '';\n    full_text = '';\n    vacuum_ok = false;\n    vacuum_error = (e && e.message) ? String(e.message).slice(0, 200) : 'vacuum_failed';\n  }\n}\n\nconst text_clean = cleanExtractedText(text);\n// --- Transcript extraction (YouTube + generic page heuristic + Apify fallback) ---\nfunction detectMediaPlatform(url) {\n  const u = String(url || '').toLowerCase();\n  if (!u) return '';\n  if (/youtube\\.com|youtu\\.be|youtube-nocookie\\.com/.test(u)) return 'youtube';\n  if (/tiktok\\.com/.test(u)) return 'tiktok';\n  if (/instagram\\.com/.test(u)) return 'instagram';\n  return '';\n}\n\nfunction extractYoutubeVideoId(url) {\n  const u = String(url || '');\n  let m = u.match(/[?&]v=([A-Za-z0-9_-]{6,})/);\n  if (m) return m[1];\n  m = u.match(/youtu\\.be\\/([A-Za-z0-9_-]{6,})/);\n  if (m) return m[1];\n  m = u.match(/\\/shorts\\/([A-Za-z0-9_-]{6,})/);\n  if (m) return m[1];\n  m = u.match(/\\/embed\\/([A-Za-z0-9_-]{6,})/);\n  if (m) return m[1];\n  m = u.match(/\\/live\\/([A-Za-z0-9_-]{6,})/);\n  if (m) return m[1];\n  return '';\n}\n\nfunction decodeHtmlEntities(s) {\n  return String(s || '')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&#(\\d+);/g, (_, n) => String.fromCharCode(Number(n)))\n    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));\n}\n\nfunction parseTimedTextXml(xml) {\n  const texts = [];\n  const re = /<text[^>]*>([\\s\\S]*?)<\\/text>|<p[^>]*>([\\s\\S]*?)<\\/p>/gi;\n  let m;\n  while ((m = re.exec(String(xml || '')))) {\n    const raw = m[1] != null ? m[1] : m[2];\n    const t = decodeHtmlEntities(String(raw).replace(/<[^>]+>/g, ' ')).replace(/\\s+/g, ' ').trim();\n    if (t) texts.push(t);\n  }\n  return texts.join(' ').replace(/\\s+/g, ' ').trim();\n}\n\nfunction parseJson3Captions(raw) {\n  try {\n    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;\n    const events = data.events || [];\n    const parts = [];\n    for (const ev of events) {\n      if (!ev || !Array.isArray(ev.segs)) continue;\n      for (const seg of ev.segs) {\n        if (seg && typeof seg.utf8 === 'string') parts.push(seg.utf8);\n      }\n    }\n    return parts.join('').replace(/\\s+/g, ' ').trim();\n  } catch (e) {\n    return '';\n  }\n}\n\nfunction extractTranscriptFromPageText(text) {\n  const s = String(text || '');\n  if (!s.trim()) return { found: false, transcript: '', reason: 'empty' };\n\n  // Explicit transcript / captions section\n  const sectionRe = /(?:^|\\n)#{1,3}\\s*(transcript|transcription|captions?|sous-titres?|transcripci[oó]n)\\b[^\\n]*\\n+([\\s\\S]{200,})/i;\n  const sec = s.match(sectionRe);\n  if (sec) {\n    let body = sec[2];\n    const cut = body.search(/\\n#{1,3}\\s+\\S/);\n    if (cut > 200) body = body.slice(0, cut);\n    body = body.trim();\n    if (body.length >= 200) {\n      return { found: true, transcript: body.slice(0, 50000), reason: 'page_section' };\n    }\n  }\n\n  // Dialogue-like density: many short lines with speaker cues or timestamps\n  const lines = s.split(/\\n/).map((l) => l.trim()).filter(Boolean);\n  const dialogueLines = lines.filter((l) =>\n    /^(\\[?\\d{1,2}:\\d{2}(:\\d{2})?\\]?|[A-ZÀ-Ÿ][\\wÀ-ÿ.'-]{0,30}\\s*:|[-–—]\\s+\\S)/.test(l) &&\n    l.length < 220\n  );\n  if (dialogueLines.length >= 12 && dialogueLines.join(' ').length >= 400) {\n    return {\n      found: true,\n      transcript: dialogueLines.join('\\n').slice(0, 50000),\n      reason: 'page_dialogue',\n    };\n  }\n\n  // Long vacuum that looks like spoken prose (YouTube description dumps rarely this long alone)\n  const words = s.split(/\\s+/).filter(Boolean);\n  if (words.length >= 350) {\n    const sentenceEnds = (s.match(/[.!?][\"')\\]]?\\s+[A-ZÀ-Ÿ]/g) || []).length;\n    if (sentenceEnds >= 20) {\n      // Likely article body, not necessarily a transcript — do not claim transcript\n      return { found: false, transcript: '', reason: 'long_prose_not_transcript' };\n    }\n  }\n\n  return { found: false, transcript: '', reason: 'not_found_in_page' };\n}\n\nasync function fetchYoutubeCaptionsViaInnertube(videoId) {\n  const player = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',\n    headers: {\n      'Content-Type': 'application/json',\n      'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',\n    },\n    body: {\n      context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },\n      videoId,\n    },\n    json: true,\n    timeout: 25000,\n  });\n\n  const tracks =\n    (((player || {}).captions || {}).playerCaptionsTracklistRenderer || {}).captionTracks ||\n    [];\n  if (!tracks.length) return { ok: false, text: '', error: 'no_caption_tracks' };\n\n  // Prefer manual tracks, then en/fr, then first\n  const ranked = [...tracks].sort((a, b) => {\n    const score = (t) => {\n      let s = 0;\n      if (!t.kind || t.kind !== 'asr') s += 5;\n      const lang = String(t.languageCode || '').toLowerCase();\n      if (lang.startsWith('fr')) s += 4;\n      if (lang.startsWith('en')) s += 3;\n      return s;\n    };\n    return score(b) - score(a);\n  });\n\n  for (const track of ranked.slice(0, 4)) {\n    const base = track.baseUrl;\n    if (!base) continue;\n    for (const fmt of ['json3', 'srv3', '']) {\n      try {\n        const url = fmt ? base + (base.includes('?') ? '&' : '?') + 'fmt=' + fmt : base;\n        const raw = await this.helpers.httpRequest({\n          method: 'GET',\n          url,\n          headers: { 'User-Agent': 'Mozilla/5.0 kb-capture/1.0' },\n          timeout: 20000,\n        });\n        const body = typeof raw === 'string' ? raw : String(raw ?? '');\n        if (!body || body.length < 40) continue;\n        let text = '';\n        if (fmt === 'json3' || body.trim().startsWith('{')) {\n          text = parseJson3Captions(body);\n          if (!text) text = parseTimedTextXml(body);\n        } else {\n          text = parseTimedTextXml(body);\n        }\n        if (text && text.length >= 40) {\n          return {\n            ok: true,\n            text: text.slice(0, 50000),\n            lang: track.languageCode || '',\n            error: '',\n          };\n        }\n      } catch (e) {\n        // try next format / track\n      }\n    }\n  }\n  return { ok: false, text: '', error: 'caption_fetch_empty' };\n}\n\nasync function fetchYoutubeTranscriptViaApify(videoUrl) {\n  let token = '';\n  try {\n    if (typeof $env !== 'undefined' && $env.APIFY_TOKEN) token = String($env.APIFY_TOKEN);\n  } catch (e) {}\n  try {\n    if (!token && typeof process !== 'undefined' && process.env && process.env.APIFY_TOKEN) {\n      token = String(process.env.APIFY_TOKEN);\n    }\n  } catch (e) {}\n  if (!token) return { ok: false, text: '', error: 'apify_token_missing' };\n\n  try {\n    const items = await this.helpers.httpRequest({\n      method: 'POST',\n      url:\n        'https://api.apify.com/v2/acts/' +\n        'pintostudio~youtube-transcript-scraper' +\n        '/run-sync-get-dataset-items',\n      headers: {\n        'Content-Type': 'application/json',\n        Authorization: 'Bearer ' + token,\n      },\n      body: { videoUrl, targetLanguage: 'en' },\n      json: true,\n      timeout: 120000,\n    });\n    const list = Array.isArray(items) ? items : [];\n    const parts = [];\n    for (const it of list) {\n      if (!it || typeof it !== 'object') continue;\n      if (typeof it.text === 'string') parts.push(it.text);\n      else if (typeof it.transcript === 'string') parts.push(it.transcript);\n      else if (typeof it.caption === 'string') parts.push(it.caption);\n      else if (Array.isArray(it.transcript)) {\n        for (const row of it.transcript) {\n          if (typeof row === 'string') parts.push(row);\n          else if (row && typeof row.text === 'string') parts.push(row.text);\n        }\n      } else if (Array.isArray(it.data)) {\n        for (const row of it.data) {\n          if (row && typeof row.text === 'string') parts.push(row.text);\n        }\n      }\n    }\n    const text = parts.join(' ').replace(/\\s+/g, ' ').trim();\n    if (text.length >= 40) return { ok: true, text: text.slice(0, 50000), error: '' };\n    return { ok: false, text: '', error: 'apify_empty' };\n  } catch (e) {\n    return {\n      ok: false,\n      text: '',\n      error: (e && e.message) ? String(e.message).slice(0, 200) : 'apify_failed',\n    };\n  }\n}\n\nconst media_platform = detectMediaPlatform(source_url);\nlet transcript = '';\nlet transcript_source = '';\nlet transcript_error = '';\nlet transcript_lang = '';\n\nfunction transcriptLooksClean(t) {\n  const s = String(t || '');\n  if (s.length < 40) return false;\n  // YouTube/Jina chrome — NOT spoken \"subscribe\" (common outro in real captions)\n  if (/ytimg\\.com|hqdefault|NaN\\s*\\/\\s*NaN|!\\[Image\\s*\\d+|watching on YouTube|Skip navigation|Search with your voice/i.test(s)) return false;\n  const words = s.split(/\\s+/).filter(Boolean);\n  if (words.length < 12) return false;\n  const urls = (s.match(/https?:\\/\\//g) || []).length;\n  if (urls >= 3 && urls * 40 > words.length) return false;\n  const mdImgs = (s.match(/!\\[[^\\]]*\\]\\(/g) || []).length;\n  if (mdImgs >= 2) return false;\n  return true;\n}\n\n/** Collapse consecutive / rolling-caption duplicates without deleting unique dialogue. */\nfunction cleanTranscriptText(raw) {\n  let s = String(raw || '').replace(/\\r\\n/g, '\\n').trim();\n  if (!s) return '';\n\n  // Prefer line-oriented cleaning when there are multiple non-empty lines\n  let lines = s.split(/\\n/).map((l) => l.replace(/\\s+/g, ' ').trim()).filter(Boolean);\n  if (lines.length <= 1) {\n    // Prose / space-joined captions: split into sentences then collapse\n    lines = s\n      .replace(/\\s+/g, ' ')\n      .split(/(?<=[.!?])\\s+/)\n      .map((l) => l.trim())\n      .filter(Boolean);\n  }\n\n  function norm(x) {\n    return String(x || '')\n      .toLowerCase()\n      .replace(/[^\\p{L}\\p{N}\\s]/gu, ' ')\n      .replace(/\\s+/g, ' ')\n      .trim();\n  }\n\n  function isNearDup(a, b) {\n    const na = norm(a);\n    const nb = norm(b);\n    if (!na || !nb) return false;\n    if (na === nb) return true;\n    // Rolling ASR: one segment contained in the next (or vice versa)\n    const shorter = na.length <= nb.length ? na : nb;\n    const longer = na.length <= nb.length ? nb : na;\n    if (shorter.length >= 12 && longer.includes(shorter)) return true;\n    // Shared long prefix (karaoke-style updates)\n    const n = Math.min(na.length, nb.length, 80);\n    if (n >= 24) {\n      let same = 0;\n      for (let i = 0; i < n; i++) {\n        if (na[i] === nb[i]) same++;\n        else break;\n      }\n      if (same / n >= 0.82) return true;\n    }\n    return false;\n  }\n\n  const out = [];\n  for (const line of lines) {\n    if (!out.length) {\n      out.push(line);\n      continue;\n    }\n    const prev = out[out.length - 1];\n    if (isNearDup(prev, line)) {\n      // Keep the longer / more complete variant\n      if (line.length > prev.length) out[out.length - 1] = line;\n      continue;\n    }\n    out.push(line);\n  }\n\n  let cleaned = out.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\n  // If original was single-paragraph prose, rejoin with spaces\n  if (!/\\n/.test(String(raw || '').trim()) || String(raw || '').split(/\\n/).filter((l) => l.trim()).length <= 1) {\n    cleaned = out.join(' ').replace(/\\s+/g, ' ').trim();\n  }\n  return cleaned.slice(0, 50000);\n}\n\nconst pageProbe = extractTranscriptFromPageText(full_text || text_clean);\nconst pageOk = pageProbe.found && transcriptLooksClean(pageProbe.transcript);\n\nif (media_platform === 'youtube') {\n  const videoId = extractYoutubeVideoId(source_url);\n  if (videoId) {\n    try {\n      const cap = await fetchYoutubeCaptionsViaInnertube.call(this, videoId);\n      if (cap.ok && transcriptLooksClean(cap.text)) {\n        transcript = cap.text;\n        transcript_source = 'youtube_innertube';\n        transcript_lang = cap.lang || '';\n      } else {\n        if (cap && cap.ok && !transcriptLooksClean(cap.text)) {\n          transcript_error = 'innertube_rejected_as_chrome';\n        } else {\n          transcript_error = (cap && cap.error) ? cap.error : 'innertube_failed';\n        }\n        const ap = await fetchYoutubeTranscriptViaApify.call(this, source_url);\n        if (ap.ok && transcriptLooksClean(ap.text)) {\n          transcript = ap.text;\n          transcript_source = 'apify_pintostudio';\n          transcript_error = '';\n        } else {\n          const apErr = (ap && ap.ok && !transcriptLooksClean(ap.text))\n            ? 'apify_rejected_as_chrome'\n            : ((ap && ap.error) || 'apify_failed');\n          transcript_error = (transcript_error ? transcript_error + ';' : '') + apErr;\n          if (pageOk) {\n            transcript = pageProbe.transcript;\n            transcript_source = pageProbe.reason;\n            transcript_error = '';\n          }\n        }\n      }\n    } catch (e) {\n      transcript_error = (e && e.message) ? String(e.message).slice(0, 200) : 'transcript_failed';\n      try {\n        const ap = await fetchYoutubeTranscriptViaApify.call(this, source_url);\n        if (ap.ok && transcriptLooksClean(ap.text)) {\n          transcript = ap.text;\n          transcript_source = 'apify_pintostudio';\n          transcript_error = '';\n        } else if (pageOk) {\n          transcript = pageProbe.transcript;\n          transcript_source = pageProbe.reason;\n          transcript_error = '';\n        } else if (ap && ap.error) {\n          transcript_error += ';' + ap.error;\n        }\n      } catch (e2) {\n        if (pageOk) {\n          transcript = pageProbe.transcript;\n          transcript_source = pageProbe.reason;\n          transcript_error = '';\n        }\n      }\n    }\n  } else {\n    transcript_error = 'youtube_id_missing';\n    if (pageOk) {\n      transcript = pageProbe.transcript;\n      transcript_source = pageProbe.reason;\n      transcript_error = '';\n    }\n  }\n} else if (pageOk) {\n  transcript = pageProbe.transcript;\n  transcript_source = pageProbe.reason;\n} else if (source_url && pageProbe.reason) {\n  transcript_error = pageProbe.reason;\n}\n\nfunction stripTranscriptSections(text) {\n  let s = String(text || '');\n  s = s.replace(/(?:^|\\n)#{1,3}\\s*(?:transcript|transcription|captions?|sous-titres?|transcripci[oó]n)\\b[^\\n]*\\n[\\s\\S]*?(?=\\n#{1,3}\\s+\\S|$)/gi, '\\n');\n  return s.replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nfunction sanitizeYoutubeVacuum(text) {\n  let s = stripTranscriptSections(text);\n  // Drop Comments / Chapters chrome blocks entirely\n  s = s.replace(/(?:^|\\n)#{1,3}\\s*(?:Comments?|Chapters?|Shorts|Live chats?)\\b[^\\n]*\\n[\\s\\S]*?(?=\\n#{1,3}\\s+\\S|$)/gi, '\\n');\n\n  // Prefer Title + Description when present (real page content for YT)\n  const descMatch = s.match(/(?:^|\\n)#{1,3}\\s*Description\\b[^\\n]*\\n+([\\s\\S]+?)(?=\\n#{1,3}\\s+\\S|$)/i);\n  if (descMatch && descMatch[1].trim().length >= 60) {\n    const lines = s.split('\\n').map((l) => l.trim()).filter(Boolean);\n    let title = '';\n    for (const l of lines.slice(0, 12)) {\n      if (/^#{1,3}\\s/.test(l)) continue;\n      if (/^!\\[|^\\[|https?:\\/\\//i.test(l)) continue;\n      if (/^(back|search|sign in)$/i.test(l)) continue;\n      if (l.length >= 12 && l.length <= 160) {\n        title = l;\n        break;\n      }\n    }\n    let desc = descMatch[1].trim();\n    // Cut description before related-video link farms\n    const farm = desc.search(/\\n(?=###?\\s*\\[|!\\[[^\\]]*\\]\\(https?:\\/\\/(?:www\\.)?youtube\\.com\\/watch)/i);\n    if (farm > 80) desc = desc.slice(0, farm).trim();\n    return (title ? title + '\\n\\n' : '') + desc;\n  }\n\n  const lines = s.split('\\n');\n  const out = [];\n  let prevNorm = '';\n  let consec = 0;\n  let selfUrlHits = 0;\n  for (const line of lines) {\n    const t = line.trim();\n    if (!t) {\n      out.push(line);\n      continue;\n    }\n    if (/^(skip navigation|search with your voice|sign in|subscribe|back|show more|show less)$/i.test(t)) continue;\n    if (/ytimg\\.com|hqdefault/i.test(t)) continue;\n    if (/^!\\[[^\\]]*\\]\\(https?:\\/\\/[^)]+\\)/i.test(t) && /watch\\?v=/i.test(t)) continue;\n    if (/youtube\\.com\\/watch\\?v=/i.test(t)) {\n      selfUrlHits += 1;\n      if (selfUrlHits > 2) continue;\n    }\n    const norm = t.toLowerCase().replace(/\\s+/g, ' ');\n    if (norm && norm === prevNorm) {\n      consec += 1;\n      if (consec >= 1) continue;\n    } else {\n      consec = 0;\n      prevNorm = norm;\n    }\n    out.push(line);\n  }\n  return out.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nif (transcript) {\n  transcript = cleanTranscriptText(transcript);\n}\n\nconst transcript_ok = !!(transcript && transcript.trim().length >= 40);\n\n// Prefer feeding LLM a mix of page + transcript when useful\n// Use sanitized body head for YouTube to avoid chrome drowning the LLM\nlet content_for_llm = (\n  vacuum_ok ? full_text : (text_clean || source_url || 'capture sans texte')\n);\nif (media_platform === 'youtube') {\n  content_for_llm = sanitizeYoutubeVacuum(content_for_llm) || content_for_llm;\n}\nif (transcript_ok) {\n  const head = stripTranscriptSections(content_for_llm).slice(0, 6000);\n  const tr = transcript.slice(0, 6000);\n  content_for_llm = (head + '\\n\\n## Transcript\\n\\n' + tr).slice(0, 12000);\n} else {\n  content_for_llm = stripTranscriptSections(content_for_llm).slice(0, 12000);\n}\n\nlet body_content = vacuum_ok ? full_text : text_clean;\n// Always remove fake ## Transcript chrome from vacuum (even when captions fail)\nif (media_platform === 'youtube') {\n  body_content = sanitizeYoutubeVacuum(body_content);\n} else if (/##\\s*Transcript\\b/i.test(body_content || '')) {\n  body_content = stripTranscriptSections(body_content);\n}\nif (transcript_ok) {\n  body_content = stripTranscriptSections(body_content);\n  if (!body_content) body_content = transcript;\n}\n\nreturn [{\n  json: {\n    text: text_clean,\n    text_raw: text,\n    source_url,\n    has_image,\n    full_text,\n    full_text_raw,\n    full_text_clean: full_text,\n    vacuum_ok,\n    vacuum_error,\n    content_for_llm,\n    body_content,\n    media_platform,\n    transcript: transcript_ok ? transcript : '',\n    transcript_ok,\n    transcript_source,\n    transcript_error,\n    transcript_lang,\n  },\n  binary: item.binary,\n}];\n"
       }
     },
     {
-      "id": "c935c532-93aa-422a-b88e-f0f17a454259",
+      "id": "def830fd-e0b8-4e40-a705-dcb1dec9dae7",
       "name": "Classify LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -70,7 +70,7 @@
       }
     },
     {
-      "id": "a0ca27c4-7a9b-4d39-9fb3-e2531ac67b33",
+      "id": "d7face70-2079-4c3f-9905-e64427164af6",
       "name": "Edit Fields -1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -81,11 +81,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const item = $input.first();\nconst prep = $('Prepare Capture').first().json;\n\nlet parsed = {};\ntry {\n  const raw = item.json.choices?.[0]?.message?.content;\n  parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n} catch (e) {\n  parsed = {};\n}\n\nconst SOFT_MAP = {\n  'mystère littéraire': 'littérature',\n  'mystere litteraire': 'littérature',\n  'romand interactif': 'littérature',\n  'roman interactif': 'littérature',\n  'the new york times': 'NYT',\n  'new york times': 'NYT',\n  'new yorker': 'New Yorker',\n};\n\nfunction softMap(s) {\n  const k = String(s || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  return SOFT_MAP[k] || null;\n}\n\nfunction isProperish(s) {\n  return /^@/.test(s) || /[A-ZÀ-Ÿ]/.test(s) || /\\./.test(s);\n}\n\nfunction polishTopic(tag) {\n  let t = String(tag || '').trim().replace(/^#/, '');\n  if (!t) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  const words = t.split(/\\s+/).filter(Boolean);\n  if (words.length > 3) {\n    const first = softMap(words.slice(0, 2).join(' ')) || softMap(words[0]) || words[0];\n    t = first;\n  }\n  if (/cookie|consent|rgpd|gdpr|onetrust|cookiebot/i.test(t)) return '';\n  if (!isProperish(t)) t = t.toLowerCase();\n  return t.slice(0, 48);\n}\n\nfunction polishFacet(s, { allowAt = true } = {}) {\n  let t = String(s || '').trim();\n  if (!t || /^n\\/?a$/i.test(t) || /^unknown$/i.test(t) || /^inconnu$/i.test(t)) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  if (allowAt && /^instagram\\.com\\/([^/?#]+)/i.test(t)) {\n    return '@' + t.match(/instagram\\.com\\/([^/?#]+)/i)[1];\n  }\n  const words = t.split(/\\s+/);\n  if (words.length > 4 && !/^@/.test(t)) {\n    const m = softMap(t) || softMap(words.slice(0, 3).join(' '));\n    if (m) return m;\n  }\n  return t.slice(0, 60);\n}\n\nlet tags = Array.isArray(parsed.tags) ? parsed.tags.map(polishTopic).filter(Boolean) : [];\nconst seen = new Set();\ntags = tags.filter((t) => {\n  const k = t.toLowerCase();\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n}).slice(0, 7);\n\nfunction mediumFromUrl(url) {\n  const u = String(url || '');\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  if (!m) return '';\n  const host = m[1].toLowerCase().replace(/^www\\./, '');\n  const path = (u.split(host)[1] || '').split(/[?#]/)[0] || '';\n  const HOST_MAP = {\n    'nytimes.com': 'NYT',\n    'www.nytimes.com': 'NYT',\n    'newyorker.com': 'New Yorker',\n    'wired.com': 'Wired',\n    'lemonde.fr': 'Le Monde',\n    'linkedin.com': 'LinkedIn',\n    'x.com': 'X',\n    'twitter.com': 'X',\n    'youtube.com': 'YouTube',\n    'youtu.be': 'YouTube',\n    'substack.com': 'Substack',\n    'medium.com': 'Medium.com',\n  };\n  if (HOST_MAP[host]) return HOST_MAP[host];\n  if (host === 'instagram.com' || host.endsWith('.instagram.com')) {\n    const h = path.match(/^\\/@?([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'Instagram';\n  }\n  if (host === 'tiktok.com') {\n    const h = path.match(/^\\/@([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'TikTok';\n  }\n  const sub = host.match(/^([a-z0-9-]+)\\.substack\\.com$/);\n  if (sub) return sub[1] + ' (Substack)';\n  const label = host.split('.')[0];\n  if (label && label.length >= 2 && label !== 'www') {\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  }\n  return '';\n}\n\nconst author = polishFacet(parsed.author || '', { allowAt: false });\nconst llmMedium = polishFacet(\n  parsed.medium || parsed.outlet || parsed.publication || '',\n  { allowAt: true }\n);\nconst urlMedium = mediumFromUrl(prep.source_url || '');\nlet medium = urlMedium || llmMedium;\nif (/^(article|post|vid[eé]o|podcast|newsletter|thread|screenshot)$/i.test(medium) && urlMedium) {\n  medium = urlMedium;\n}\nconst format = polishFacet(parsed.format || '', { allowAt: false }).toLowerCase();\n\n// Strip facet echoes from topic tags (Tags = subjects only)\nconst facetKeys = new Set(\n  [author, medium, format].filter(Boolean).map((x) => x.toLowerCase())\n);\ntags = tags.filter((t) => !facetKeys.has(t.toLowerCase()));\n\nconst title = (parsed.title || 'capture').toString().trim().slice(0, 200) || 'capture';\nconst summary = (parsed.summary || '').toString().trim();\nlet filename = (parsed.filename || '').toString().trim();\nif (!filename) {\n  filename = 'capture-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\n}\nfilename = filename.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'capture';\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic: tags,\n    author,\n    medium,\n    format,\n    ocr: prep.text || '',\n    filename,\n    source_url: prep.source_url || '',\n    full_text: prep.full_text || '',\n    full_text_raw: prep.full_text_raw || '',\n    vacuum_ok: !!prep.vacuum_ok,\n    body_content: prep.body_content || '',\n    has_image: !!prep.has_image,\n  },\n}];\n"
+        "jsCode": "const item = $input.first();\nconst prep = $('Prepare Capture').first().json;\n\nlet parsed = {};\ntry {\n  const raw = item.json.choices?.[0]?.message?.content;\n  parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n} catch (e) {\n  parsed = {};\n}\n\nconst SOFT_MAP = {\n  'mystère littéraire': 'littérature',\n  'mystere litteraire': 'littérature',\n  'romand interactif': 'littérature',\n  'roman interactif': 'littérature',\n  'the new york times': 'NYT',\n  'new york times': 'NYT',\n  'new yorker': 'New Yorker',\n};\n\nfunction softMap(s) {\n  const k = String(s || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  return SOFT_MAP[k] || null;\n}\n\nfunction isProperish(s) {\n  return /^@/.test(s) || /[A-ZÀ-Ÿ]/.test(s) || /\\./.test(s);\n}\n\nfunction polishTopic(tag) {\n  let t = String(tag || '').trim().replace(/^#/, '');\n  if (!t) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  const words = t.split(/\\s+/).filter(Boolean);\n  if (words.length > 3) {\n    const first = softMap(words.slice(0, 2).join(' ')) || softMap(words[0]) || words[0];\n    t = first;\n  }\n  if (/cookie|consent|rgpd|gdpr|onetrust|cookiebot/i.test(t)) return '';\n  if (!isProperish(t)) t = t.toLowerCase();\n  return t.slice(0, 48);\n}\n\nfunction polishFacet(s, { allowAt = true } = {}) {\n  let t = String(s || '').trim();\n  if (!t || /^n\\/?a$/i.test(t) || /^unknown$/i.test(t) || /^inconnu$/i.test(t)) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  if (allowAt && /^instagram\\.com\\/([^/?#]+)/i.test(t)) {\n    return '@' + t.match(/instagram\\.com\\/([^/?#]+)/i)[1];\n  }\n  const words = t.split(/\\s+/);\n  if (words.length > 4 && !/^@/.test(t)) {\n    const m = softMap(t) || softMap(words.slice(0, 3).join(' '));\n    if (m) return m;\n  }\n  return t.slice(0, 60);\n}\n\nlet tags = Array.isArray(parsed.tags) ? parsed.tags.map(polishTopic).filter(Boolean) : [];\nconst seen = new Set();\ntags = tags.filter((t) => {\n  const k = t.toLowerCase();\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n}).slice(0, 7);\n\nfunction mediumFromUrl(url) {\n  const u = String(url || '');\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  if (!m) return '';\n  const host = m[1].toLowerCase().replace(/^www\\./, '');\n  const path = (u.split(host)[1] || '').split(/[?#]/)[0] || '';\n  const HOST_MAP = {\n    'nytimes.com': 'NYT',\n    'www.nytimes.com': 'NYT',\n    'newyorker.com': 'New Yorker',\n    'wired.com': 'Wired',\n    'lemonde.fr': 'Le Monde',\n    'linkedin.com': 'LinkedIn',\n    'x.com': 'X',\n    'twitter.com': 'X',\n    'youtube.com': 'YouTube',\n    'youtu.be': 'YouTube',\n    'substack.com': 'Substack',\n    'medium.com': 'Medium.com',\n  };\n  if (HOST_MAP[host]) return HOST_MAP[host];\n  if (host === 'instagram.com' || host.endsWith('.instagram.com')) {\n    const h = path.match(/^\\/@?([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'Instagram';\n  }\n  if (host === 'tiktok.com') {\n    const h = path.match(/^\\/@([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'TikTok';\n  }\n  const sub = host.match(/^([a-z0-9-]+)\\.substack\\.com$/);\n  if (sub) return sub[1] + ' (Substack)';\n  const label = host.split('.')[0];\n  if (label && label.length >= 2 && label !== 'www') {\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  }\n  return '';\n}\n\nconst author = polishFacet(parsed.author || '', { allowAt: false });\nconst llmMedium = polishFacet(\n  parsed.medium || parsed.outlet || parsed.publication || '',\n  { allowAt: true }\n);\nconst urlMedium = mediumFromUrl(prep.source_url || '');\nlet medium = urlMedium || llmMedium;\nif (/^(article|post|vid[eé]o|podcast|newsletter|thread|screenshot)$/i.test(medium) && urlMedium) {\n  medium = urlMedium;\n}\nconst format = polishFacet(parsed.format || '', { allowAt: false }).toLowerCase();\n\n// Strip facet echoes from topic tags (Tags = subjects only)\nconst facetKeys = new Set(\n  [author, medium, format].filter(Boolean).map((x) => x.toLowerCase())\n);\ntags = tags.filter((t) => !facetKeys.has(t.toLowerCase()));\n\nconst title = (parsed.title || 'capture').toString().trim().slice(0, 200) || 'capture';\nconst summary = (parsed.summary || '').toString().trim();\nlet filename = (parsed.filename || '').toString().trim();\nif (!filename) {\n  filename = 'capture-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\n}\nfilename = filename.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'capture';\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic: tags,\n    author,\n    medium,\n    format,\n    ocr: prep.text || '',\n    filename,\n    source_url: prep.source_url || '',\n    full_text: prep.full_text || '',\n    full_text_raw: prep.full_text_raw || '',\n    vacuum_ok: !!prep.vacuum_ok,\n    body_content: prep.body_content || '',\n    has_image: !!prep.has_image,\n    media_platform: prep.media_platform || '',\n    transcript: prep.transcript || '',\n    transcript_ok: !!prep.transcript_ok,\n    transcript_source: prep.transcript_source || '',\n    transcript_error: prep.transcript_error || '',\n    transcript_lang: prep.transcript_lang || '',\n  },\n}];\n"
       }
     },
     {
-      "id": "6e480221-a2ec-4259-a8b4-0ed7a5c1f701",
+      "id": "f5feeefa-eb5d-4828-9d23-5d9cfc9ea558",
       "name": "Save Image to Disk",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,7 +100,7 @@
       }
     },
     {
-      "id": "76356bd6-78e9-4d3f-b743-e80b1dc32f31",
+      "id": "918cc221-aa3c-4ecc-b578-9a16f2d6bf68",
       "name": "Has Image?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -118,7 +118,7 @@
           },
           "conditions": [
             {
-              "id": "55c31ca8-de5a-401a-ac72-8a59db9d3e3c",
+              "id": "93162b52-d783-4611-9595-37e4ced907a7",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "3865565c-b8c9-4bf8-b431-2fa6998b2626",
+      "id": "04e9e408-5acf-4c03-9290-b428de4d6bec",
       "name": "Upload to kDrive",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -181,7 +181,7 @@
       }
     },
     {
-      "id": "a96ecb59-4b5d-403d-9348-734aa11812c2",
+      "id": "204df660-1a4f-4933-b2c7-2155cb1e098b",
       "name": "Create kDrive share link",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -207,7 +207,7 @@
       }
     },
     {
-      "id": "3e01295c-4921-4ebf-adcb-ae369594841b",
+      "id": "79696488-c12c-4fb4-8621-2c39ce89c442",
       "name": "Enrich With Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -219,93 +219,129 @@
         "assignments": {
           "assignments": [
             {
-              "id": "3a726cca-5322-4bb4-b24e-8dcb641620ef",
+              "id": "72009111-a02b-4393-ab55-aa6f744b46c4",
               "name": "title",
               "value": "={{ $('Save Image to Disk').item.json.title }}",
               "type": "string"
             },
             {
-              "id": "547e7e77-3dd8-4b6c-a461-9775d0234cbb",
+              "id": "3ed8a85b-f035-4908-9e9b-9cb0e2a29023",
               "name": "summary",
               "value": "={{ $('Save Image to Disk').item.json.summary }}",
               "type": "string"
             },
             {
-              "id": "42048705-17bb-40e0-9a45-538705f3d2a0",
+              "id": "c330dd6c-0469-475b-b1cf-ab520d3eaead",
               "name": "tags",
               "value": "={{ $('Save Image to Disk').item.json.tags }}",
               "type": "array"
             },
             {
-              "id": "630bd519-c402-4966-b7bc-d5dc3c958ca0",
+              "id": "d3025a44-cb9b-40a6-935c-cbe519776cbf",
               "name": "ocr",
               "value": "={{ $('Save Image to Disk').item.json.ocr }}",
               "type": "string"
             },
             {
-              "id": "79bb1fbc-71d4-4d32-b2b6-5b66df3703c2",
+              "id": "f50960b4-20fb-4591-864f-6e4625a4f380",
               "name": "filename",
               "value": "={{ $('Save Image to Disk').item.json.filename }}",
               "type": "string"
             },
             {
-              "id": "557e3598-77e0-4987-8347-2ac0bff07428",
+              "id": "07b67359-965b-4b4d-9381-86a783233805",
               "name": "source_url",
               "value": "={{ $('Save Image to Disk').item.json.source_url }}",
               "type": "string"
             },
             {
-              "id": "2518d7d5-985b-4090-9c2d-0cfd604676a1",
+              "id": "9b6e9b1d-9190-4f2d-a0cb-cd815a7a012c",
               "name": "full_text",
               "value": "={{ $('Save Image to Disk').item.json.full_text }}",
               "type": "string"
             },
             {
-              "id": "874dabcd-7ad2-4429-aa69-29b61d283403",
+              "id": "2558ed05-0e48-46cc-81b9-07135eb0aa7c",
               "name": "vacuum_ok",
               "value": "={{ $('Save Image to Disk').item.json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "63e481c1-ede9-46ff-a388-91be943846b9",
+              "id": "00aa7ed9-f66a-4c7e-99df-fd68a152785b",
               "name": "body_content",
               "value": "={{ $('Save Image to Disk').item.json.body_content }}",
               "type": "string"
             },
             {
-              "id": "73a88646-f9be-41d4-9d10-022a4889f9e3",
+              "id": "85f8b42d-86c9-4db2-b349-d89d378579b0",
               "name": "has_image",
               "value": true,
               "type": "boolean"
             },
             {
-              "id": "134ae906-0b6f-45d8-87b1-0f86fee72674",
+              "id": "9eff07de-7108-4c03-a7c8-0cd40214067e",
               "name": "kdrive_url",
               "value": "={{ $json.data.url }}",
               "type": "string"
             },
             {
-              "id": "093e92e9-24e6-42c5-810f-cd1a3b91f04c",
+              "id": "8c2262ea-6b3e-41fd-a374-aa566a59c04c",
               "name": "author",
               "value": "={{ $('Save Image to Disk').item.json.author }}",
               "type": "string"
             },
             {
-              "id": "34e3f750-0e55-4112-be0f-0b16259bf928",
+              "id": "77e1a8e1-a3e3-434d-9160-dbba86a05a45",
               "name": "format",
               "value": "={{ $('Save Image to Disk').item.json.format }}",
               "type": "string"
             },
             {
-              "id": "ef1b9483-52e6-404d-807c-1e9d64860420",
+              "id": "5d233042-c4e4-41fa-a7e0-23be3eb2293c",
               "name": "tags_topic",
               "value": "={{ $('Save Image to Disk').item.json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "d68732b6-7969-48bd-803a-3ed60c5d520f",
+              "id": "ceba8045-9c14-4496-933b-4748b2a30280",
               "name": "medium",
               "value": "={{ $('Save Image to Disk').item.json.medium }}",
+              "type": "string"
+            },
+            {
+              "id": "0eb1d27a-25fa-4a98-9536-99de3c9d96bd",
+              "name": "media_platform",
+              "value": "={{ $('Save Image to Disk').item.json.media_platform }}",
+              "type": "string"
+            },
+            {
+              "id": "4e0619c6-02bf-4a30-8b7d-1e693ec5ca37",
+              "name": "transcript",
+              "value": "={{ $('Save Image to Disk').item.json.transcript }}",
+              "type": "string"
+            },
+            {
+              "id": "c3743f15-c02a-4136-b993-48de1efdf4db",
+              "name": "transcript_ok",
+              "value": "={{ $('Save Image to Disk').item.json.transcript_ok }}",
+              "type": "boolean"
+            },
+            {
+              "id": "16d3800d-2a53-440f-9d62-62a34b5f278d",
+              "name": "transcript_source",
+              "value": "={{ $('Save Image to Disk').item.json.transcript_source }}",
+              "type": "string"
+            },
+            {
+              "id": "a2b62a71-1d51-4a5b-881d-65c44c8a887a",
+              "name": "transcript_error",
+              "value": "={{ $('Save Image to Disk').item.json.transcript_error }}",
+              "type": "string"
+            },
+            {
+              "id": "4cf1d4fb-8e82-49af-9792-09fceec4eca3",
+              "name": "transcript_lang",
+              "value": "={{ $('Save Image to Disk').item.json.transcript_lang }}",
               "type": "string"
             }
           ]
@@ -314,7 +350,7 @@
       }
     },
     {
-      "id": "be818c14-d569-4aa9-9c1f-6972ddf8ad46",
+      "id": "8d95e892-c292-4623-a391-337f217911e5",
       "name": "Enrich Without Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -326,93 +362,129 @@
         "assignments": {
           "assignments": [
             {
-              "id": "a05d8cec-2fe7-4605-87b2-16d02fca535b",
+              "id": "273f1b32-2a0a-435c-9f4c-a40361720e26",
               "name": "title",
               "value": "={{ $json.title }}",
               "type": "string"
             },
             {
-              "id": "7146169a-cefd-4072-93ad-642bd5637687",
+              "id": "15de0049-dc8e-4d7b-bd13-c47bbe37ff37",
               "name": "summary",
               "value": "={{ $json.summary }}",
               "type": "string"
             },
             {
-              "id": "21c33e88-c892-482a-b9a9-70c35315444d",
+              "id": "867f9247-c46c-4830-a8a9-fe5669bbc85e",
               "name": "tags",
               "value": "={{ $json.tags }}",
               "type": "array"
             },
             {
-              "id": "7daa79a2-cea4-45b8-b448-df4385083ea9",
+              "id": "af8b2c75-e8dc-4d06-a63f-ad16d6b26562",
               "name": "ocr",
               "value": "={{ $json.ocr }}",
               "type": "string"
             },
             {
-              "id": "6b569e07-80f0-4987-9e81-418a0f100959",
+              "id": "b5f8b55a-683b-4552-864a-fbd61aa3f93b",
               "name": "filename",
               "value": "={{ $json.filename }}",
               "type": "string"
             },
             {
-              "id": "0d8af592-a5ed-4894-a932-db5a950c5eeb",
+              "id": "64b2cff2-b6ca-4696-b68e-717732eb994b",
               "name": "source_url",
               "value": "={{ $json.source_url }}",
               "type": "string"
             },
             {
-              "id": "fa21ede6-da1d-479b-ab0e-182dab700b74",
+              "id": "5aec91ef-1eff-4588-9be7-2616ef009b64",
               "name": "full_text",
               "value": "={{ $json.full_text }}",
               "type": "string"
             },
             {
-              "id": "44afa214-9b83-47e0-b34c-47c14cddc5e3",
+              "id": "ee99a479-0213-4df5-80d9-c852222d7ffd",
               "name": "vacuum_ok",
               "value": "={{ $json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "fe234b47-fa4e-46bc-9fb4-54f27e63245c",
+              "id": "ebdfe0b0-c77c-48b9-b1d6-13fe311ca9b6",
               "name": "body_content",
               "value": "={{ $json.body_content }}",
               "type": "string"
             },
             {
-              "id": "121c03d0-2317-46d4-bda6-5f60f532f9f1",
+              "id": "35845fc4-5442-4a85-8b44-da8cdcbc429d",
               "name": "has_image",
               "value": false,
               "type": "boolean"
             },
             {
-              "id": "49d4cdee-6f80-41cb-a693-62ea5c1828ca",
+              "id": "6ca0f342-d334-4262-93bc-f62046ad6d47",
               "name": "kdrive_url",
               "value": "",
               "type": "string"
             },
             {
-              "id": "4692d698-93b3-4bfc-bcae-cc29e75f2dfd",
+              "id": "d5fdfc4a-0725-4eb7-9faa-f838df0d2c54",
               "name": "author",
               "value": "={{ $json.author }}",
               "type": "string"
             },
             {
-              "id": "53564226-235d-44ca-af3f-1066f77f30f7",
+              "id": "117ea561-e0ac-47a5-b5ee-d4e2e8ca5e50",
               "name": "format",
               "value": "={{ $json.format }}",
               "type": "string"
             },
             {
-              "id": "d84f8178-9b26-42d5-8e78-db0a1d8ccb8a",
+              "id": "5c2d4d19-5902-4827-ba51-08b61f95e940",
               "name": "tags_topic",
               "value": "={{ $json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "cae5a1d0-573f-419b-92b5-aca3d22ef50a",
+              "id": "606a2fc2-dfa7-426b-a059-169d6ddb6b30",
               "name": "medium",
               "value": "={{ $json.medium }}",
+              "type": "string"
+            },
+            {
+              "id": "9051072f-92ec-4f50-8dfe-75a66fb04419",
+              "name": "media_platform",
+              "value": "={{ $json.media_platform }}",
+              "type": "string"
+            },
+            {
+              "id": "f5ad592a-0498-4c5a-9438-a4f705d09b9d",
+              "name": "transcript",
+              "value": "={{ $json.transcript }}",
+              "type": "string"
+            },
+            {
+              "id": "88ea9089-02cc-454e-bf7f-fb4e6c6aee93",
+              "name": "transcript_ok",
+              "value": "={{ $json.transcript_ok }}",
+              "type": "boolean"
+            },
+            {
+              "id": "56706969-cfe0-4d89-8d6e-70717b6faf0f",
+              "name": "transcript_source",
+              "value": "={{ $json.transcript_source }}",
+              "type": "string"
+            },
+            {
+              "id": "dd7d3516-3a55-4df5-b312-ceea356b3006",
+              "name": "transcript_error",
+              "value": "={{ $json.transcript_error }}",
+              "type": "string"
+            },
+            {
+              "id": "77503c34-b71e-490e-a320-fa66643e8762",
+              "name": "transcript_lang",
+              "value": "={{ $json.transcript_lang }}",
               "type": "string"
             }
           ]
@@ -421,7 +493,7 @@
       }
     },
     {
-      "id": "62e68273-65c1-47b3-aa4c-25d90e125465",
+      "id": "3023385f-badc-4f78-b33d-f86d90a9d0c6",
       "name": "Notion Path?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -439,7 +511,7 @@
           },
           "conditions": [
             {
-              "id": "d5a031ec-7376-49aa-a155-0145373e6903",
+              "id": "9ac64bb1-26ce-4e74-ae81-f5ea93753832",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -455,7 +527,7 @@
       }
     },
     {
-      "id": "f2bcaa4c-b362-4e56-90cb-f572a372ab06",
+      "id": "1b593830-ca01-4953-8ee8-a2542e48af15",
       "name": "Create Notion (with image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -516,7 +588,7 @@
             {
               "key": "Text|rich_text",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "textContent": "={{ ($json.body_content || $json.ocr || '').toString().slice(0, 1900) }}"
+              "textContent": "={{ (($json.body_content || $json.ocr || '').toString().slice(0, 600) + ($json.transcript_ok && $json.transcript ? ('\\n\\n## Transcript\\n\\n' + $json.transcript.toString().slice(0, 1200)) : '')).slice(0, 1900) }}"
             },
             {
               "key": "URL|url",
@@ -548,7 +620,7 @@
                 "text": [
                   {
                     "textType": "text",
-                    "text": "={{ ($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 1800) }}"
+                    "text": "={{ (($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 700) + ($json.transcript_ok && $json.transcript ? ('\\n\\n## Transcript\\n\\n' + $json.transcript.toString().slice(0, 1100)) : '')).slice(0, 1900) }}"
                   }
                 ]
               }
@@ -568,7 +640,7 @@
       }
     },
     {
-      "id": "790a9382-b228-4ba5-a64c-7e27a3db22fd",
+      "id": "26c5d12e-162c-44cb-af14-fb31ed3a6974",
       "name": "Create Notion (no image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -629,7 +701,7 @@
             {
               "key": "Text|rich_text",
               "type": "={{$parameter[\"&key\"].split(\"|\").pop()}}",
-              "textContent": "={{ ($json.body_content || $json.ocr || '').toString().slice(0, 1900) }}"
+              "textContent": "={{ (($json.body_content || $json.ocr || '').toString().slice(0, 600) + ($json.transcript_ok && $json.transcript ? ('\\n\\n## Transcript\\n\\n' + $json.transcript.toString().slice(0, 1200)) : '')).slice(0, 1900) }}"
             },
             {
               "key": "URL|url",
@@ -648,7 +720,7 @@
                 "text": [
                   {
                     "textType": "text",
-                    "text": "={{ ($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 1800) }}"
+                    "text": "={{ (($json.source_url ? ('Source: ' + $json.source_url + '\\n\\n') : '') + ($json.body_content || $json.ocr || '').toString().slice(0, 700) + ($json.transcript_ok && $json.transcript ? ('\\n\\n## Transcript\\n\\n' + $json.transcript.toString().slice(0, 1100)) : '')).slice(0, 1900) }}"
                   }
                 ]
               }
@@ -664,7 +736,7 @@
       }
     },
     {
-      "id": "f56e2203-3931-481b-85de-7b192f85e498",
+      "id": "78be4112-3cee-4cca-98c2-de05d91f28d1",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -675,11 +747,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const notion = $input.first().json;\n\nfunction tryNode(name) {\n  try {\n    return $(name).first().json;\n  } catch (e) {\n    return null;\n  }\n}\n\nconst meta = tryNode('Enrich With Media') || tryNode('Enrich Without Media') || {};\n\nconst source_url = meta.source_url || '';\nconst body_content = meta.body_content || meta.ocr || '';\nconst tags = Array.isArray(meta.tags) ? meta.tags : [];\nconst tags_topic = Array.isArray(meta.tags_topic) ? meta.tags_topic : tags;\nconst title = meta.title || notion.name || 'capture';\nconst summary = meta.summary || '';\nconst ocr = meta.ocr || '';\nconst filename = meta.filename || '';\nconst has_image = !!meta.has_image;\nconst kdrive_url = meta.kdrive_url || '';\nconst vacuum_ok = !!meta.vacuum_ok;\nconst author = meta.author || '';\nconst medium = meta.medium || meta.outlet || '';\nconst format = meta.format || '';\n\nconst fmSource = source_url || (has_image ? 'screenshot' : 'share');\nconst tagsMd = tags_topic.map(t => '  - ' + t).join('\\n');\nlet md = '---\\n';\nmd += 'source: ' + fmSource + '\\n';\nmd += 'created: ' + new Date().toISOString() + '\\n';\nif (author) md += 'author: ' + JSON.stringify(author) + '\\n';\nif (medium) md += 'medium: ' + JSON.stringify(medium) + '\\n';\nif (format) md += 'format: ' + JSON.stringify(format) + '\\n';\nmd += 'tags:\\n' + tagsMd + '\\n';\nmd += '---\\n\\n';\nmd += '# ' + title + '\\n\\n';\nif (source_url) {\n  md += '[Page originale](' + source_url + ')\\n\\n';\n}\nmd += '## Summary\\n\\n' + summary + '\\n\\n';\nmd += '## Contenu\\n\\n' + body_content + '\\n\\n';\nif (has_image && filename) {\n  md += '![screenshot](https://n8n.example.com/media/' + filename + '.png)\\n\\n';\n}\nif (kdrive_url) {\n  md += '[Voir sur kDrive](' + kdrive_url + ')\\n';\n}\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic,\n    author,\n    medium,\n    format,\n    ocr,\n    filename,\n    source_url,\n    vacuum_ok,\n    notion_url: notion.url || '',\n    kdrive_url,\n    markdown: md,\n  },\n}];\n"
+        "jsCode": "const notion = $input.first().json;\n\nfunction tryNode(name) {\n  try {\n    return $(name).first().json;\n  } catch (e) {\n    return null;\n  }\n}\n\nconst meta = tryNode('Enrich With Media') || tryNode('Enrich Without Media') || {};\n\nconst source_url = meta.source_url || '';\nconst body_content = meta.body_content || meta.ocr || '';\nconst tags = Array.isArray(meta.tags) ? meta.tags : [];\nconst tags_topic = Array.isArray(meta.tags_topic) ? meta.tags_topic : tags;\nconst title = meta.title || notion.name || 'capture';\nconst summary = meta.summary || '';\nconst ocr = meta.ocr || '';\nconst filename = meta.filename || '';\nconst has_image = !!meta.has_image;\nconst kdrive_url = meta.kdrive_url || '';\nconst vacuum_ok = !!meta.vacuum_ok;\nconst author = meta.author || '';\nconst medium = meta.medium || meta.outlet || '';\nconst format = meta.format || '';\nconst transcript = meta.transcript || '';\nconst transcript_ok = !!meta.transcript_ok;\nconst transcript_source = meta.transcript_source || '';\n\nconst fmSource = source_url || (has_image ? 'screenshot' : 'share');\nconst tagsMd = tags_topic.map(t => '  - ' + t).join('\\n');\nlet md = '---\\n';\nmd += 'source: ' + fmSource + '\\n';\nmd += 'created: ' + new Date().toISOString() + '\\n';\nif (author) md += 'author: ' + JSON.stringify(author) + '\\n';\nif (medium) md += 'medium: ' + JSON.stringify(medium) + '\\n';\nif (format) md += 'format: ' + JSON.stringify(format) + '\\n';\nmd += 'tags:\\n' + tagsMd + '\\n';\nmd += '---\\n\\n';\nmd += '# ' + title + '\\n\\n';\nif (source_url) {\n  md += '[Page originale](' + source_url + ')\\n\\n';\n}\nmd += '## Summary\\n\\n' + summary + '\\n\\n';\nfunction stripTranscriptSectionsMd(text) {\n  let s = String(text || '');\n  s = s.replace(/(?:^|\\n)#{1,3}\\s*(?:transcript|transcription|captions?|sous-titres?|transcripci[oó]n)\\b[^\\n]*\\n[\\s\\S]*?(?=\\n#{1,3}\\s+\\S|$)/gi, '\\n');\n  return s.replace(/\\n{3,}/g, '\\n\\n').trim();\n}\nconst contenu = stripTranscriptSectionsMd(body_content);\nmd += '## Contenu\\n\\n' + contenu + '\\n\\n';\nif (transcript_ok && transcript) {\n  md += '## Transcript\\n\\n' + transcript + '\\n\\n';\n}\nif (has_image && filename) {\n  md += '![screenshot](https://n8n.example.com/media/' + filename + '.png)\\n\\n';\n}\nif (kdrive_url) {\n  md += '[Voir sur kDrive](' + kdrive_url + ')\\n';\n}\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic,\n    author,\n    medium,\n    format,\n    ocr,\n    filename,\n    source_url,\n    vacuum_ok,\n    transcript,\n    transcript_ok,\n    transcript_source,\n    notion_url: notion.url || '',\n    kdrive_url,\n    markdown: md,\n  },\n}];\n"
       }
     },
     {
-      "id": "20828a5d-7bc6-4bba-aae2-70f5feda4cfd",
+      "id": "64ec9bc4-1f3c-4df0-8783-f347cf7d0662",
       "name": "Respond to Webhook1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -689,7 +761,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"title\": {{ JSON.stringify($json.title) }},\n  \"markdown\": {{ JSON.stringify($json.markdown) }},\n  \"notion_url\": {{ JSON.stringify($json.notion_url) }},\n  \"kdrive_url\": {{ JSON.stringify($json.kdrive_url) }},\n  \"source_url\": {{ JSON.stringify($json.source_url) }},\n  \"vacuum_ok\": {{ JSON.stringify($json.vacuum_ok) }},\n  \"summary\": {{ JSON.stringify($json.summary) }},\n  \"ocr\": {{ JSON.stringify($json.ocr) }},\n  \"filename\": {{ JSON.stringify($json.filename) }},\n  \"tags\": {{ JSON.stringify($json.tags) }},\n  \"author\": {{ JSON.stringify($json.author || \"\") }},\n  \"medium\": {{ JSON.stringify($json.medium || \"\") }},\n  \"format\": {{ JSON.stringify($json.format || \"\") }}\n}",
+        "responseBody": "={\n  \"title\": {{ JSON.stringify($json.title) }},\n  \"markdown\": {{ JSON.stringify($json.markdown) }},\n  \"notion_url\": {{ JSON.stringify($json.notion_url) }},\n  \"kdrive_url\": {{ JSON.stringify($json.kdrive_url) }},\n  \"source_url\": {{ JSON.stringify($json.source_url) }},\n  \"vacuum_ok\": {{ JSON.stringify($json.vacuum_ok) }},\n  \"summary\": {{ JSON.stringify($json.summary) }},\n  \"ocr\": {{ JSON.stringify($json.ocr) }},\n  \"filename\": {{ JSON.stringify($json.filename) }},\n  \"tags\": {{ JSON.stringify($json.tags) }},\n  \"author\": {{ JSON.stringify($json.author || \"\") }},\n  \"medium\": {{ JSON.stringify($json.medium || \"\") }},\n  \"format\": {{ JSON.stringify($json.format || \"\") }},\n  \"transcript_ok\": {{ JSON.stringify($json.transcript_ok) }},\n  \"transcript_source\": {{ JSON.stringify($json.transcript_source || \"\") }}\n}",
         "options": {
           "responseCode": 200
         }

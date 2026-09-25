@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
   <title id="title">Two ways to capture</title>
-  <desc id="desc">Side button saves what you see via screenshot OCR. Share saves the full article from the site. Both land in Notion and Obsidian.</desc>
+  <desc id="desc">Side button saves what you see via screenshot OCR. Share saves the full article from the site. Both land in Notion and Obsidian; when source_url is present the server may also attach a transcript.</desc>
   <rect width="960" height="420" fill="#f7f7f5"/>
   <text x="480" y="42" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#1a1a1a">Two ways to capture</text>
 
   <!-- Column A -->
   <rect x="40" y="70" width="420" height="260" rx="12" fill="#ffffff" stroke="#0d7377" stroke-width="2"/>
-  <text x="250" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0d7377">A  Side button (recommended)</text>
-  <text x="250" y="148" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">One tap ’ screenshot</text>
+  <text x="250" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0d7377">A — Side button (recommended)</text>
+  <text x="250" y="148" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">One tap ? screenshot</text>
   <text x="250" y="180" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">Saves what you SEE (OCR)</text>
   <text x="250" y="212" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#444444">Fast; may miss below the fold</text>
   <rect x="110" y="240" width="280" height="36" rx="8" fill="#e8f4f4"/>
@@ -15,8 +15,8 @@
 
   <!-- Column B -->
   <rect x="500" y="70" width="420" height="260" rx="12" fill="#ffffff" stroke="#333333" stroke-width="2"/>
-  <text x="710" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1a1a1a">B  Share</text>
-  <text x="710" y="148" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">Share ’ shortcut</text>
+  <text x="710" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1a1a1a">B — Share</text>
+  <text x="710" y="148" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">Share ? shortcut</text>
   <text x="710" y="180" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#1a1a1a">Saves the FULL article/post</text>
   <text x="710" y="212" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#444444">Complete text from the site</text>
   <rect x="570" y="240" width="280" height="36" rx="8" fill="#f0f0ee"/>
@@ -24,5 +24,5 @@
 
   <!-- Shared outcome -->
   <rect x="40" y="350" width="880" height="48" rx="10" fill="#1a1a1a"/>
-  <text x="480" y="380" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#ffffff">Both land in Notion + Obsidian  source link when available</text>
+  <text x="480" y="380" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ffffff">Both ? Notion + Obsidian · source link + transcript when available</text>
 </svg>

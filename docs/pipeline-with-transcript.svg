@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420" role="img" aria-labelledby="title desc">
+  <title id="title">KB Capture pipeline with transcript</title>
+  <desc id="desc">Capture, then vacuum or OCR, then transcript from page text, YouTube captions, or Apify, then classify, then Notion, Obsidian, and optional kDrive.</desc>
+  <rect width="1100" height="420" fill="#f7f7f5"/>
+  <text x="550" y="36" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#1a1a1a">Server-side pipeline (transcript included)</text>
+
+  <!-- Stage boxes -->
+  <rect x="24" y="70" width="150" height="88" rx="10" fill="#ffffff" stroke="#0d7377" stroke-width="2"/>
+  <text x="99" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0d7377">1. Capture</text>
+  <text x="99" y="132" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#444444">iOS Shortcut</text>
+  <text x="99" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#666666">text · file · source_url</text>
+
+  <path d="M178 114 H208" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="212" y="70" width="170" height="88" rx="10" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="297" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1a1a1a">2. Vacuum / OCR</text>
+  <text x="297" y="132" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#444444">Jina reader + cleanup</text>
+  <text x="297" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#666666">or on-screen OCR text</text>
+
+  <path d="M386 114 H416" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="420" y="54" width="240" height="120" rx="10" fill="#e8f4f4" stroke="#0d7377" stroke-width="2"/>
+  <text x="540" y="82" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0d7377">3. Transcript</text>
+  <text x="540" y="106" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1a1a1a">page body (if already present)</text>
+  <text x="540" y="126" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1a1a1a">YouTube captions (innertube)</text>
+  <text x="540" y="146" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1a1a1a">Apify fallback (optional token)</text>
+  <text x="540" y="164" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#0d7377">TikTok / Instagram: detect only</text>
+
+  <path d="M664 114 H694" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="698" y="70" width="150" height="88" rx="10" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="773" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1a1a1a">4. Classify</text>
+  <text x="773" y="132" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#444444">LLM metadata</text>
+  <text x="773" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#666666">title · tags · medium&</text>
+
+  <path d="M852 114 H882" stroke="#1a1a1a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="886" y="70" width="190" height="88" rx="10" fill="#1a1a1a"/>
+  <text x="981" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff">5. Destinations</text>
+  <text x="981" y="132" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#e8f4f4">Notion · Obsidian</text>
+  <text x="981" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#cccccc">optional kDrive image</text>
+
+  <!-- Detail strip -->
+  <rect x="24" y="210" width="1052" height="180" rx="12" fill="#ffffff" stroke="#dddddd" stroke-width="1"/>
+  <text x="48" y="244" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1a1a1a">Transcript details</text>
+  <text x="48" y="274" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">" Runs on the server when source_url is present  Shortcut usually needs no change if it already sends the URL.</text>
+  <text x="48" y="300" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">" Preferred path: YouTube native captions via innertube. If missing: Apify pintostudio/youtube-transcript-scraper (needs APIFY_TOKEN).</text>
+  <text x="48" y="326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">" Cleanup: strip fake YouTube Transcript UI chrome, dedupe rolling captions, prefer Description for Contenu; Notion length caps.</text>
+  <text x="48" y="352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">" Output: ## Transcript in Notion + Obsidian markdown; JSON fields transcript_ok and transcript_source.</text>
+  <text x="48" y="378" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#666666">transcript_source examples: page_section · page_dialogue · youtube_innertube · apify_pintostudio</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+</svg>
