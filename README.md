@@ -122,8 +122,8 @@ Create **one** Shortcut that handles both launch modes with an **If** (*Si*).
     - `filename` (note title)
     - `markdown` (note body)
     - optionally `notion_url`, `source_url`, `transcript_ok`
-17. **URL Encode** (*Encoder en URL*) the markdown (and the title/filename if needed).
-18. Build a **Text** / **URL** for the Obsidian deep link, e.g. `obsidian://new?vault=YOUR_VAULT&name=ENCODED_TITLE&content=ENCODED_MARKDOWN`.
+17. **URL Encode** (*Encoder en URL*) the markdown (and the note title if needed for the Obsidian deep link). This is for the `obsidian://` query string only — it does **not** make disk/URL basenames safe (see [URL-safe filenames](#url-safe-filenames)).
+18. Build a **Text** / **URL** for the Obsidian deep link, e.g. `obsidian://new?vault=YOUR_VAULT&name=ENCODED_TITLE&content=ENCODED_MARKDOWN`. Prefer the server’s `filename` (already a slug) for `name=` when available.
 19. **Open URL** (*Ouvrir l’URL*) → creates/opens the note in Obsidian.
 20. Optional for debug: **Show Result** (*Afficher le résultat*) or **Show Alert** (*Afficher une alerte*) with `notion_url` / errors.
 
@@ -138,9 +138,9 @@ Exact names from [`workflow/kb-capture.json`](workflow/kb-capture.json):
 | 1 | **Webhook** | Receives multipart `POST` (`text`, `file`, `source_url`) with header auth |
 | 2 | **Prepare Capture** | Normalizes inputs; Jina URL vacuum / reader; cleanup; **transcript** (page / YouTube / Apify) |
 | 3 | **Classify LLM** | HTTP call to the LLM → title, summary, tags, author, medium, format, filename |
-| 4 | **Edit Fields -1** | Polishes topics; keeps Tags = topics only; derives medium when useful |
+| 4 | **Edit Fields -1** | Polishes topics; keeps Tags = topics only; derives medium when useful; **URL-safe `sanitizeFilename`** |
 | 5 | **Has Image?** | Branches: with screenshot vs text/URL only |
-| 6 | **Save Image to Disk** | Writes the uploaded image to a temp path (image branch) |
+| 6 | **Save Image to Disk** | Writes the uploaded image to a temp path; re-sanitizes basename + sets `binary.fileName` |
 | 7 | **Upload to kDrive** | Uploads the screenshot (optional; needs kDrive creds) |
 | 8 | **Create kDrive share link** | Public share URL for the file |
 | 9 | **Enrich With Media** | Sets fields including `kdrive_url` when an image was stored |
@@ -223,6 +223,20 @@ When `source_url` is present, **Prepare Capture** may attach spoken/caption text
 
 ---
 
+## URL-safe filenames
+
+Titles can contain characters that break HTTP paths and filesystem names (`/`, `:`, `?`, spaces, accents, etc.). **iOS Shortcuts “URL Encode” only percent-encodes for query strings** — it does not produce a safe basename for disk, kDrive, or media URLs.
+
+The workflow therefore sanitizes **server-side**:
+
+1. **Edit Fields -1** — `sanitizeFilename(...)` on the LLM `filename` (fallback: title): decodeURI-ish cleanup, accents → ASCII, keep `[a-z0-9_-]`, collapse dashes, length-cap.
+2. **Save Image to Disk** — re-sanitizes (defense in depth) and sets `binary.fileName` to `{slug}.png`.
+3. **Notion / kDrive / media URLs** — use `$json.filename` (e.g. `={{ $json.filename }}.png`), **not** `$json.title`.
+
+Example: a title like `UseLayouts: Nested layouts` becomes a slug such as `uselayouts-nested-layouts` for the PNG path and Obsidian `name=` when you use the returned `filename`.
+
+---
+
 ## Architecture (technical)
 
 ```mermaid
@@ -245,9 +259,9 @@ Main stages:
 1. **Webhook** — `POST /kb-capture`, header auth (`X-KB-capture-token`)
 2. **Prepare Capture** — normalizes `text` / `source_url` / image; optional Jina reader vacuum; cookie/junk cleanup; **transcript** (page / innertube / Apify)
 3. **Classify LLM** — JSON schema: `title`, `summary`, `tags`, `author`, `medium`, `format`, `filename`
-4. **Edit Fields -1** — polish topics; strip author/medium/format out of Tags; derive medium from URL when useful
+4. **Edit Fields -1** — polish topics; strip author/medium/format out of Tags; derive medium from URL when useful; run **`sanitizeFilename`** so basenames are URL/disk-safe
 5. **Has Image?** — with image → save + kDrive; without → Notion-only path
-6. **Create Notion** — properties including **Author**, **Medium**, **Format**; Tags = topics only; Contenu may include `## Transcript`
+6. **Create Notion** — properties including **Author**, **Medium**, **Format**; Tags = topics only; file attachment name uses `$json.filename` (not title); Contenu may include `## Transcript`
 7. **Build Response** — Obsidian front-matter (`author`, `medium`, `format`, `tags`, `source`) + markdown body (with `## Transcript` when present)
 8. **Respond to Webhook** — JSON for the Shortcut (`transcript_ok`, `transcript_source`, …)
 
@@ -389,7 +403,7 @@ If *Get Dictionary from Input* fails on the webhook JSON, insert **Set Variable*
 
 ### URL-encode Obsidian deep links
 
-Encode title and markdown before building `obsidian://new?vault=…&name=…&content=…`.
+Encode title and markdown before building `obsidian://new?vault=…&name=…&content=…`. Prefer the webhook’s `filename` slug for `name=` — see [URL-safe filenames](#url-safe-filenames). URL Encode alone is not enough for disk/media basenames.
 
 ### Apify fallback silent skip
 

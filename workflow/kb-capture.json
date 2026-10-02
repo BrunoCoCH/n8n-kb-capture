@@ -2,9 +2,9 @@
   "name": "kb-capture",
   "nodes": [
     {
-      "id": "09f222c0-5711-42b9-9c33-5a4169546939",
+      "id": "9ef24dc0-90e3-47d7-8d1d-700376f6e8c5",
       "name": "Webhook",
-      "webhookId": "98ff91b2-69a9-42c6-a336-cfc36f8039a1",
+      "webhookId": "682306d5-dded-401f-863e-bdafb09fce3e",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "b74e24a6-3807-47d2-befd-f353bfc521ca",
+      "id": "bfbd2275-a665-430b-b950-e3ecb918c242",
       "name": "Prepare Capture",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "def830fd-e0b8-4e40-a705-dcb1dec9dae7",
+      "id": "5206af30-3bc6-4d34-883c-f3edf0e6b818",
       "name": "Classify LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -70,7 +70,7 @@
       }
     },
     {
-      "id": "d7face70-2079-4c3f-9905-e64427164af6",
+      "id": "97ef671f-89c7-4c2f-b852-57eb7ab9f8e7",
       "name": "Edit Fields -1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -81,11 +81,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const item = $input.first();\nconst prep = $('Prepare Capture').first().json;\n\nlet parsed = {};\ntry {\n  const raw = item.json.choices?.[0]?.message?.content;\n  parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n} catch (e) {\n  parsed = {};\n}\n\nconst SOFT_MAP = {\n  'mystère littéraire': 'littérature',\n  'mystere litteraire': 'littérature',\n  'romand interactif': 'littérature',\n  'roman interactif': 'littérature',\n  'the new york times': 'NYT',\n  'new york times': 'NYT',\n  'new yorker': 'New Yorker',\n};\n\nfunction softMap(s) {\n  const k = String(s || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  return SOFT_MAP[k] || null;\n}\n\nfunction isProperish(s) {\n  return /^@/.test(s) || /[A-ZÀ-Ÿ]/.test(s) || /\\./.test(s);\n}\n\nfunction polishTopic(tag) {\n  let t = String(tag || '').trim().replace(/^#/, '');\n  if (!t) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  const words = t.split(/\\s+/).filter(Boolean);\n  if (words.length > 3) {\n    const first = softMap(words.slice(0, 2).join(' ')) || softMap(words[0]) || words[0];\n    t = first;\n  }\n  if (/cookie|consent|rgpd|gdpr|onetrust|cookiebot/i.test(t)) return '';\n  if (!isProperish(t)) t = t.toLowerCase();\n  return t.slice(0, 48);\n}\n\nfunction polishFacet(s, { allowAt = true } = {}) {\n  let t = String(s || '').trim();\n  if (!t || /^n\\/?a$/i.test(t) || /^unknown$/i.test(t) || /^inconnu$/i.test(t)) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  if (allowAt && /^instagram\\.com\\/([^/?#]+)/i.test(t)) {\n    return '@' + t.match(/instagram\\.com\\/([^/?#]+)/i)[1];\n  }\n  const words = t.split(/\\s+/);\n  if (words.length > 4 && !/^@/.test(t)) {\n    const m = softMap(t) || softMap(words.slice(0, 3).join(' '));\n    if (m) return m;\n  }\n  return t.slice(0, 60);\n}\n\nlet tags = Array.isArray(parsed.tags) ? parsed.tags.map(polishTopic).filter(Boolean) : [];\nconst seen = new Set();\ntags = tags.filter((t) => {\n  const k = t.toLowerCase();\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n}).slice(0, 7);\n\nfunction mediumFromUrl(url) {\n  const u = String(url || '');\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  if (!m) return '';\n  const host = m[1].toLowerCase().replace(/^www\\./, '');\n  const path = (u.split(host)[1] || '').split(/[?#]/)[0] || '';\n  const HOST_MAP = {\n    'nytimes.com': 'NYT',\n    'www.nytimes.com': 'NYT',\n    'newyorker.com': 'New Yorker',\n    'wired.com': 'Wired',\n    'lemonde.fr': 'Le Monde',\n    'linkedin.com': 'LinkedIn',\n    'x.com': 'X',\n    'twitter.com': 'X',\n    'youtube.com': 'YouTube',\n    'youtu.be': 'YouTube',\n    'substack.com': 'Substack',\n    'medium.com': 'Medium.com',\n  };\n  if (HOST_MAP[host]) return HOST_MAP[host];\n  if (host === 'instagram.com' || host.endsWith('.instagram.com')) {\n    const h = path.match(/^\\/@?([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'Instagram';\n  }\n  if (host === 'tiktok.com') {\n    const h = path.match(/^\\/@([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'TikTok';\n  }\n  const sub = host.match(/^([a-z0-9-]+)\\.substack\\.com$/);\n  if (sub) return sub[1] + ' (Substack)';\n  const label = host.split('.')[0];\n  if (label && label.length >= 2 && label !== 'www') {\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  }\n  return '';\n}\n\nconst author = polishFacet(parsed.author || '', { allowAt: false });\nconst llmMedium = polishFacet(\n  parsed.medium || parsed.outlet || parsed.publication || '',\n  { allowAt: true }\n);\nconst urlMedium = mediumFromUrl(prep.source_url || '');\nlet medium = urlMedium || llmMedium;\nif (/^(article|post|vid[eé]o|podcast|newsletter|thread|screenshot)$/i.test(medium) && urlMedium) {\n  medium = urlMedium;\n}\nconst format = polishFacet(parsed.format || '', { allowAt: false }).toLowerCase();\n\n// Strip facet echoes from topic tags (Tags = subjects only)\nconst facetKeys = new Set(\n  [author, medium, format].filter(Boolean).map((x) => x.toLowerCase())\n);\ntags = tags.filter((t) => !facetKeys.has(t.toLowerCase()));\n\nconst title = (parsed.title || 'capture').toString().trim().slice(0, 200) || 'capture';\nconst summary = (parsed.summary || '').toString().trim();\nlet filename = (parsed.filename || '').toString().trim();\nif (!filename) {\n  filename = 'capture-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\n}\nfilename = filename.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'capture';\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic: tags,\n    author,\n    medium,\n    format,\n    ocr: prep.text || '',\n    filename,\n    source_url: prep.source_url || '',\n    full_text: prep.full_text || '',\n    full_text_raw: prep.full_text_raw || '',\n    vacuum_ok: !!prep.vacuum_ok,\n    body_content: prep.body_content || '',\n    has_image: !!prep.has_image,\n    media_platform: prep.media_platform || '',\n    transcript: prep.transcript || '',\n    transcript_ok: !!prep.transcript_ok,\n    transcript_source: prep.transcript_source || '',\n    transcript_error: prep.transcript_error || '',\n    transcript_lang: prep.transcript_lang || '',\n  },\n}];\n"
+        "jsCode": "const item = $input.first();\nconst prep = $('Prepare Capture').first().json;\n\nlet parsed = {};\ntry {\n  const raw = item.json.choices?.[0]?.message?.content;\n  parsed = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});\n} catch (e) {\n  parsed = {};\n}\n\n/**\n * URL-safe filename sanitizer for kb-capture.\n * Allows only [a-z0-9_-] in the basename; extension handled separately.\n * Decode URI carefully, strip accents, collapse separators, max length, fallback.\n */\nfunction sanitizeFilename(name, opts) {\n  opts = opts || {};\n  const maxBase = opts.maxBase != null ? opts.maxBase : 120;\n  const defaultExt = opts.defaultExt != null ? opts.defaultExt : '';\n  const keepExt = !!opts.keepExt;\n  const ALLOWED_EXT = { '.jpg': 1, '.jpeg': 1, '.png': 1, '.webp': 1, '.gif': 1 };\n\n  let raw = String(name == null ? '' : name);\n  try {\n    if (/%[0-9A-Fa-f]{2}/.test(raw)) {\n      raw = decodeURIComponent(raw.replace(/\\+/g, ' '));\n    }\n  } catch (e) { /* keep undecoded */ }\n\n  // Optional: if client sent a filesystem path as originalFilename, keep leaf only\n  if (opts.stripPath) {\n    raw = raw.replace(/\\\\/g, '/');\n    if (raw.includes('/')) {\n      const parts = raw.split('/').filter(Boolean);\n      raw = parts.length ? parts[parts.length - 1] : raw;\n    }\n  }\n\n  let ext = '';\n  let base = raw;\n  const m = raw.match(/^(.*?)(\\.[A-Za-z0-9]{1,8})$/);\n  if (m) {\n    base = m[1];\n    const cand = m[2].toLowerCase();\n    if (ALLOWED_EXT[cand]) ext = cand;\n    else base = raw; // weird \"ext\" → keep in base, will be stripped\n  }\n  if (!ext && defaultExt) {\n    const d = String(defaultExt).toLowerCase();\n    ext = d.charAt(0) === '.' ? d : ('.' + d);\n    if (!ALLOWED_EXT[ext]) ext = '';\n  }\n\n  base = String(base)\n    .normalize('NFKD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .toLowerCase()\n    .replace(/[^a-z0-9_-]+/g, '-')\n    .replace(/[-_]+/g, '-')\n    .replace(/^[-_.]+|[-_.]+$/g, '');\n\n  if (base.length > maxBase) {\n    base = base.slice(0, maxBase).replace(/[-_]+$/g, '');\n  }\n  base = base.replace(/^[-_.]+|[-_.]+$/g, '');\n\n  if (!base) {\n    const d = new Date();\n    const p = (n) => String(n).padStart(2, '0');\n    base =\n      'capture-' +\n      d.getFullYear() +\n      p(d.getMonth() + 1) +\n      p(d.getDate()) +\n      '-' +\n      p(d.getHours()) +\n      p(d.getMinutes()) +\n      p(d.getSeconds());\n  }\n\n  if (keepExt) {\n    return { base: base, ext: ext, full: base + (ext || '') };\n  }\n  return base;\n}\n\nconst SOFT_MAP = {\n  'mystère littéraire': 'littérature',\n  'mystere litteraire': 'littérature',\n  'romand interactif': 'littérature',\n  'roman interactif': 'littérature',\n  'the new york times': 'NYT',\n  'new york times': 'NYT',\n  'new yorker': 'New Yorker',\n};\n\nfunction softMap(s) {\n  const k = String(s || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  return SOFT_MAP[k] || null;\n}\n\nfunction isProperish(s) {\n  return /^@/.test(s) || /[A-ZÀ-Ÿ]/.test(s) || /\\./.test(s);\n}\n\nfunction polishTopic(tag) {\n  let t = String(tag || '').trim().replace(/^#/, '');\n  if (!t) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  const words = t.split(/\\s+/).filter(Boolean);\n  if (words.length > 3) {\n    const first = softMap(words.slice(0, 2).join(' ')) || softMap(words[0]) || words[0];\n    t = first;\n  }\n  if (/cookie|consent|rgpd|gdpr|onetrust|cookiebot/i.test(t)) return '';\n  if (!isProperish(t)) t = t.toLowerCase();\n  return t.slice(0, 48);\n}\n\nfunction polishFacet(s, { allowAt = true } = {}) {\n  let t = String(s || '').trim();\n  if (!t || /^n\\/?a$/i.test(t) || /^unknown$/i.test(t) || /^inconnu$/i.test(t)) return '';\n  const mapped = softMap(t);\n  if (mapped) return mapped;\n  if (allowAt && /^instagram\\.com\\/([^/?#]+)/i.test(t)) {\n    return '@' + t.match(/instagram\\.com\\/([^/?#]+)/i)[1];\n  }\n  const words = t.split(/\\s+/);\n  if (words.length > 4 && !/^@/.test(t)) {\n    const m = softMap(t) || softMap(words.slice(0, 3).join(' '));\n    if (m) return m;\n  }\n  return t.slice(0, 60);\n}\n\nlet tags = Array.isArray(parsed.tags) ? parsed.tags.map(polishTopic).filter(Boolean) : [];\nconst seen = new Set();\ntags = tags.filter((t) => {\n  const k = t.toLowerCase();\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n}).slice(0, 7);\n\nfunction mediumFromUrl(url) {\n  const u = String(url || '');\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  if (!m) return '';\n  const host = m[1].toLowerCase().replace(/^www\\./, '');\n  const path = (u.split(host)[1] || '').split(/[?#]/)[0] || '';\n  const HOST_MAP = {\n    'nytimes.com': 'NYT',\n    'www.nytimes.com': 'NYT',\n    'newyorker.com': 'New Yorker',\n    'wired.com': 'Wired',\n    'lemonde.fr': 'Le Monde',\n    'linkedin.com': 'LinkedIn',\n    'x.com': 'X',\n    'twitter.com': 'X',\n    'youtube.com': 'YouTube',\n    'youtu.be': 'YouTube',\n    'substack.com': 'Substack',\n    'medium.com': 'Medium.com',\n  };\n  if (HOST_MAP[host]) return HOST_MAP[host];\n  if (host === 'instagram.com' || host.endsWith('.instagram.com')) {\n    const h = path.match(/^\\/@?([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'Instagram';\n  }\n  if (host === 'tiktok.com') {\n    const h = path.match(/^\\/@([A-Za-z0-9._]+)/);\n    return h ? '@' + h[1] : 'TikTok';\n  }\n  const sub = host.match(/^([a-z0-9-]+)\\.substack\\.com$/);\n  if (sub) return sub[1] + ' (Substack)';\n  const label = host.split('.')[0];\n  if (label && label.length >= 2 && label !== 'www') {\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  }\n  return '';\n}\n\nconst author = polishFacet(parsed.author || '', { allowAt: false });\nconst llmMedium = polishFacet(\n  parsed.medium || parsed.outlet || parsed.publication || '',\n  { allowAt: true }\n);\nconst urlMedium = mediumFromUrl(prep.source_url || '');\nlet medium = urlMedium || llmMedium;\nif (/^(article|post|vid[eé]o|podcast|newsletter|thread|screenshot)$/i.test(medium) && urlMedium) {\n  medium = urlMedium;\n}\nconst format = polishFacet(parsed.format || '', { allowAt: false }).toLowerCase();\n\n// Strip facet echoes from topic tags (Tags = subjects only)\nconst facetKeys = new Set(\n  [author, medium, format].filter(Boolean).map((x) => x.toLowerCase())\n);\ntags = tags.filter((t) => !facetKeys.has(t.toLowerCase()));\n\nconst title = (parsed.title || 'capture').toString().trim().slice(0, 200) || 'capture';\nconst summary = (parsed.summary || '').toString().trim();\n// Prefer LLM filename; fall back to title. Always URL-safe basename (no ext).\nlet filename = sanitizeFilename(parsed.filename || title || '', { maxBase: 120 });\n\nreturn [{\n  json: {\n    title,\n    summary,\n    tags,\n    tags_topic: tags,\n    author,\n    medium,\n    format,\n    ocr: prep.text || '',\n    filename,\n    source_url: prep.source_url || '',\n    full_text: prep.full_text || '',\n    full_text_raw: prep.full_text_raw || '',\n    vacuum_ok: !!prep.vacuum_ok,\n    body_content: prep.body_content || '',\n    has_image: !!prep.has_image,\n    media_platform: prep.media_platform || '',\n    transcript: prep.transcript || '',\n    transcript_ok: !!prep.transcript_ok,\n    transcript_source: prep.transcript_source || '',\n    transcript_error: prep.transcript_error || '',\n    transcript_lang: prep.transcript_lang || '',\n  },\n}];\n"
       }
     },
     {
-      "id": "f5feeefa-eb5d-4828-9d23-5d9cfc9ea558",
+      "id": "899d0b20-d67c-47bd-9cde-8a42f03fff30",
       "name": "Save Image to Disk",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -96,11 +96,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first();\nconst base = input.json;\nconst wh = $('Webhook').first();\nconst bin = wh.binary || {};\n\nlet binaryData = null;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.data && b.mimeType && b.mimeType.startsWith('image/')) {\n    binaryData = b;\n    break;\n  }\n}\nif (!binaryData) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      binaryData = bin[key];\n      break;\n    }\n  }\n}\n\nif (!binaryData || !binaryData.data) {\n  return [{\n    json: {\n      ...base,\n      has_image: false,\n      saved_to: '',\n      file_size: 0,\n      kdrive_url: '',\n    },\n  }];\n}\n\nconst filename = base.filename;\nif (!filename) {\n  throw new Error('No filename produced by the AI step.');\n}\n\nconst dir = '/home/ubuntu/n8n/media';\nconst filepath = path.join(dir, filename + '.png');\nfs.mkdirSync(dir, { recursive: true });\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(filepath, buf);\n\nreturn [{\n  json: {\n    ...base,\n    has_image: true,\n    saved_to: filepath,\n    file_size: buf.length,\n  },\n  binary: { data: binaryData },\n}];\n"
+        "jsCode": "/**\n * URL-safe filename sanitizer for kb-capture.\n * Allows only [a-z0-9_-] in the basename; extension handled separately.\n * Decode URI carefully, strip accents, collapse separators, max length, fallback.\n */\nfunction sanitizeFilename(name, opts) {\n  opts = opts || {};\n  const maxBase = opts.maxBase != null ? opts.maxBase : 120;\n  const defaultExt = opts.defaultExt != null ? opts.defaultExt : '';\n  const keepExt = !!opts.keepExt;\n  const ALLOWED_EXT = { '.jpg': 1, '.jpeg': 1, '.png': 1, '.webp': 1, '.gif': 1 };\n\n  let raw = String(name == null ? '' : name);\n  try {\n    if (/%[0-9A-Fa-f]{2}/.test(raw)) {\n      raw = decodeURIComponent(raw.replace(/\\+/g, ' '));\n    }\n  } catch (e) { /* keep undecoded */ }\n\n  // Optional: if client sent a filesystem path as originalFilename, keep leaf only\n  if (opts.stripPath) {\n    raw = raw.replace(/\\\\/g, '/');\n    if (raw.includes('/')) {\n      const parts = raw.split('/').filter(Boolean);\n      raw = parts.length ? parts[parts.length - 1] : raw;\n    }\n  }\n\n  let ext = '';\n  let base = raw;\n  const m = raw.match(/^(.*?)(\\.[A-Za-z0-9]{1,8})$/);\n  if (m) {\n    base = m[1];\n    const cand = m[2].toLowerCase();\n    if (ALLOWED_EXT[cand]) ext = cand;\n    else base = raw; // weird \"ext\" → keep in base, will be stripped\n  }\n  if (!ext && defaultExt) {\n    const d = String(defaultExt).toLowerCase();\n    ext = d.charAt(0) === '.' ? d : ('.' + d);\n    if (!ALLOWED_EXT[ext]) ext = '';\n  }\n\n  base = String(base)\n    .normalize('NFKD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .toLowerCase()\n    .replace(/[^a-z0-9_-]+/g, '-')\n    .replace(/[-_]+/g, '-')\n    .replace(/^[-_.]+|[-_.]+$/g, '');\n\n  if (base.length > maxBase) {\n    base = base.slice(0, maxBase).replace(/[-_]+$/g, '');\n  }\n  base = base.replace(/^[-_.]+|[-_.]+$/g, '');\n\n  if (!base) {\n    const d = new Date();\n    const p = (n) => String(n).padStart(2, '0');\n    base =\n      'capture-' +\n      d.getFullYear() +\n      p(d.getMonth() + 1) +\n      p(d.getDate()) +\n      '-' +\n      p(d.getHours()) +\n      p(d.getMinutes()) +\n      p(d.getSeconds());\n  }\n\n  if (keepExt) {\n    return { base: base, ext: ext, full: base + (ext || '') };\n  }\n  return base;\n}\n\nconst fs = require('fs');\nconst path = require('path');\n\nconst input = $input.first();\nconst base = input.json;\nconst wh = $('Webhook').first();\nconst bin = wh.binary || {};\n\nlet binaryData = null;\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  if (b && b.data && b.mimeType && b.mimeType.startsWith('image/')) {\n    binaryData = b;\n    break;\n  }\n}\nif (!binaryData) {\n  for (const key of Object.keys(bin)) {\n    if (bin[key] && bin[key].data) {\n      binaryData = bin[key];\n      break;\n    }\n  }\n}\n\nif (!binaryData || !binaryData.data) {\n  return [{\n    json: {\n      ...base,\n      has_image: false,\n      saved_to: '',\n      file_size: 0,\n      kdrive_url: '',\n    },\n  }];\n}\n\n// Re-sanitize basename (defense in depth; also cover binary originalFilename)\nconst candidate = base.filename || binaryData.fileName || '';\nconst filename = sanitizeFilename(candidate || base.title || '', {\n  maxBase: 120,\n  stripPath: !base.filename && !!binaryData.fileName,\n});\nif (!filename) {\n  throw new Error('No filename produced after sanitize.');\n}\n\nconst dir = '/home/ubuntu/n8n/media';\nconst filepath = path.join(dir, filename + '.png');\nfs.mkdirSync(dir, { recursive: true });\nconst buf = Buffer.from(binaryData.data, 'base64');\nfs.writeFileSync(filepath, buf);\n\nconst safeBinary = Object.assign({}, binaryData, {\n  fileName: filename + '.png',\n  fileExtension: 'png',\n});\n\nreturn [{\n  json: {\n    ...base,\n    filename,\n    has_image: true,\n    saved_to: filepath,\n    file_size: buf.length,\n  },\n  binary: { data: safeBinary },\n}];\n"
       }
     },
     {
-      "id": "918cc221-aa3c-4ecc-b578-9a16f2d6bf68",
+      "id": "a55331a5-28ed-41d9-a0d6-7451eab45adc",
       "name": "Has Image?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -118,7 +118,7 @@
           },
           "conditions": [
             {
-              "id": "93162b52-d783-4611-9595-37e4ced907a7",
+              "id": "2540086f-d44c-473e-b696-1dfea4950bfe",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "04e9e408-5acf-4c03-9290-b428de4d6bec",
+      "id": "98a1b9fd-510b-489b-9f43-dd257a3f3960",
       "name": "Upload to kDrive",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -181,7 +181,7 @@
       }
     },
     {
-      "id": "204df660-1a4f-4933-b2c7-2155cb1e098b",
+      "id": "fd1e3861-5ead-4e0a-b3bb-15831aea20fd",
       "name": "Create kDrive share link",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -207,7 +207,7 @@
       }
     },
     {
-      "id": "79696488-c12c-4fb4-8621-2c39ce89c442",
+      "id": "4d8cf82a-cdf8-4655-a037-e727c61c4644",
       "name": "Enrich With Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -219,127 +219,127 @@
         "assignments": {
           "assignments": [
             {
-              "id": "72009111-a02b-4393-ab55-aa6f744b46c4",
+              "id": "56f3c0e2-9450-433f-8ce9-c9310d906f94",
               "name": "title",
               "value": "={{ $('Save Image to Disk').item.json.title }}",
               "type": "string"
             },
             {
-              "id": "3ed8a85b-f035-4908-9e9b-9cb0e2a29023",
+              "id": "213d78f7-460e-45b5-9d07-10da0548d66e",
               "name": "summary",
               "value": "={{ $('Save Image to Disk').item.json.summary }}",
               "type": "string"
             },
             {
-              "id": "c330dd6c-0469-475b-b1cf-ab520d3eaead",
+              "id": "a41c8f37-f650-4d0d-968d-dbb199604ca4",
               "name": "tags",
               "value": "={{ $('Save Image to Disk').item.json.tags }}",
               "type": "array"
             },
             {
-              "id": "d3025a44-cb9b-40a6-935c-cbe519776cbf",
+              "id": "47b5d039-e8a9-4b4e-aeaf-3cdfc9346f4e",
               "name": "ocr",
               "value": "={{ $('Save Image to Disk').item.json.ocr }}",
               "type": "string"
             },
             {
-              "id": "f50960b4-20fb-4591-864f-6e4625a4f380",
+              "id": "5b8b8b3f-9291-4b88-9ccc-175fa5cb737e",
               "name": "filename",
               "value": "={{ $('Save Image to Disk').item.json.filename }}",
               "type": "string"
             },
             {
-              "id": "07b67359-965b-4b4d-9381-86a783233805",
+              "id": "23951660-5ee7-44f0-a734-51e91417199e",
               "name": "source_url",
               "value": "={{ $('Save Image to Disk').item.json.source_url }}",
               "type": "string"
             },
             {
-              "id": "9b6e9b1d-9190-4f2d-a0cb-cd815a7a012c",
+              "id": "317b9487-00c7-4349-a06f-ab6d3e9b3775",
               "name": "full_text",
               "value": "={{ $('Save Image to Disk').item.json.full_text }}",
               "type": "string"
             },
             {
-              "id": "2558ed05-0e48-46cc-81b9-07135eb0aa7c",
+              "id": "dac983d2-b6df-4fc7-b6e7-ac9304b22366",
               "name": "vacuum_ok",
               "value": "={{ $('Save Image to Disk').item.json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "00aa7ed9-f66a-4c7e-99df-fd68a152785b",
+              "id": "b34404ec-3de9-43ac-93e0-512a951006a0",
               "name": "body_content",
               "value": "={{ $('Save Image to Disk').item.json.body_content }}",
               "type": "string"
             },
             {
-              "id": "85f8b42d-86c9-4db2-b349-d89d378579b0",
+              "id": "ee36d78c-af33-4d7b-a2a0-06ed139c2ebd",
               "name": "has_image",
               "value": true,
               "type": "boolean"
             },
             {
-              "id": "9eff07de-7108-4c03-a7c8-0cd40214067e",
+              "id": "4a02a2d8-c1e6-4dd2-a7b9-70f87cdaf07b",
               "name": "kdrive_url",
               "value": "={{ $json.data.url }}",
               "type": "string"
             },
             {
-              "id": "8c2262ea-6b3e-41fd-a374-aa566a59c04c",
+              "id": "a54dad48-8f3f-49f3-a108-b4739f01d697",
               "name": "author",
               "value": "={{ $('Save Image to Disk').item.json.author }}",
               "type": "string"
             },
             {
-              "id": "77e1a8e1-a3e3-434d-9160-dbba86a05a45",
+              "id": "7304f75f-e74c-4afe-99d8-411870875aef",
               "name": "format",
               "value": "={{ $('Save Image to Disk').item.json.format }}",
               "type": "string"
             },
             {
-              "id": "5d233042-c4e4-41fa-a7e0-23be3eb2293c",
+              "id": "d70ec786-ea23-4a34-8261-906b3c911bde",
               "name": "tags_topic",
               "value": "={{ $('Save Image to Disk').item.json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "ceba8045-9c14-4496-933b-4748b2a30280",
+              "id": "29f73f12-5c6b-484d-99b9-83599a4946e3",
               "name": "medium",
               "value": "={{ $('Save Image to Disk').item.json.medium }}",
               "type": "string"
             },
             {
-              "id": "0eb1d27a-25fa-4a98-9536-99de3c9d96bd",
+              "id": "f9021fa3-7b1e-4be6-8481-792184abc3d1",
               "name": "media_platform",
               "value": "={{ $('Save Image to Disk').item.json.media_platform }}",
               "type": "string"
             },
             {
-              "id": "4e0619c6-02bf-4a30-8b7d-1e693ec5ca37",
+              "id": "b2f5c976-5e1f-4c96-87ea-c30da26dc70a",
               "name": "transcript",
               "value": "={{ $('Save Image to Disk').item.json.transcript }}",
               "type": "string"
             },
             {
-              "id": "c3743f15-c02a-4136-b993-48de1efdf4db",
+              "id": "a03badea-9644-405a-9da2-0c0dfaa9b208",
               "name": "transcript_ok",
               "value": "={{ $('Save Image to Disk').item.json.transcript_ok }}",
               "type": "boolean"
             },
             {
-              "id": "16d3800d-2a53-440f-9d62-62a34b5f278d",
+              "id": "d32b60f8-3ec1-4509-8f8c-bc187453c972",
               "name": "transcript_source",
               "value": "={{ $('Save Image to Disk').item.json.transcript_source }}",
               "type": "string"
             },
             {
-              "id": "a2b62a71-1d51-4a5b-881d-65c44c8a887a",
+              "id": "baf85212-c3fc-4639-a36b-63a557e1c1d8",
               "name": "transcript_error",
               "value": "={{ $('Save Image to Disk').item.json.transcript_error }}",
               "type": "string"
             },
             {
-              "id": "4cf1d4fb-8e82-49af-9792-09fceec4eca3",
+              "id": "1a0af71a-ed1f-4e83-89a3-4f5b8addae41",
               "name": "transcript_lang",
               "value": "={{ $('Save Image to Disk').item.json.transcript_lang }}",
               "type": "string"
@@ -350,7 +350,7 @@
       }
     },
     {
-      "id": "8d95e892-c292-4623-a391-337f217911e5",
+      "id": "7ad6bba5-4483-46ed-937b-e5c256c35402",
       "name": "Enrich Without Media",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -362,127 +362,127 @@
         "assignments": {
           "assignments": [
             {
-              "id": "273f1b32-2a0a-435c-9f4c-a40361720e26",
+              "id": "675a6c6f-15cd-48a0-920f-5c43c3256d5b",
               "name": "title",
               "value": "={{ $json.title }}",
               "type": "string"
             },
             {
-              "id": "15de0049-dc8e-4d7b-bd13-c47bbe37ff37",
+              "id": "9df98008-b824-4174-937f-10215395337c",
               "name": "summary",
               "value": "={{ $json.summary }}",
               "type": "string"
             },
             {
-              "id": "867f9247-c46c-4830-a8a9-fe5669bbc85e",
+              "id": "2f618094-c551-42e4-8b9d-b9e960688683",
               "name": "tags",
               "value": "={{ $json.tags }}",
               "type": "array"
             },
             {
-              "id": "af8b2c75-e8dc-4d06-a63f-ad16d6b26562",
+              "id": "32152bd3-508a-480e-bbf1-211e4c52bbd6",
               "name": "ocr",
               "value": "={{ $json.ocr }}",
               "type": "string"
             },
             {
-              "id": "b5f8b55a-683b-4552-864a-fbd61aa3f93b",
+              "id": "b1abae61-f9fb-4237-a001-43685c232084",
               "name": "filename",
               "value": "={{ $json.filename }}",
               "type": "string"
             },
             {
-              "id": "64b2cff2-b6ca-4696-b68e-717732eb994b",
+              "id": "e30a5273-9027-473e-8bf0-c4b437ca26a2",
               "name": "source_url",
               "value": "={{ $json.source_url }}",
               "type": "string"
             },
             {
-              "id": "5aec91ef-1eff-4588-9be7-2616ef009b64",
+              "id": "c0af3b7d-79c3-4430-aeff-c6c3aeeb3ee8",
               "name": "full_text",
               "value": "={{ $json.full_text }}",
               "type": "string"
             },
             {
-              "id": "ee99a479-0213-4df5-80d9-c852222d7ffd",
+              "id": "dda75851-c1d8-4644-ae78-d0a5bfcc1935",
               "name": "vacuum_ok",
               "value": "={{ $json.vacuum_ok }}",
               "type": "boolean"
             },
             {
-              "id": "ebdfe0b0-c77c-48b9-b1d6-13fe311ca9b6",
+              "id": "74b52b2e-71d3-448f-b8c1-673947e8fe9c",
               "name": "body_content",
               "value": "={{ $json.body_content }}",
               "type": "string"
             },
             {
-              "id": "35845fc4-5442-4a85-8b44-da8cdcbc429d",
+              "id": "805f21ac-d94c-4cb0-a303-51763f5729d2",
               "name": "has_image",
               "value": false,
               "type": "boolean"
             },
             {
-              "id": "6ca0f342-d334-4262-93bc-f62046ad6d47",
+              "id": "abaae17e-3df8-410e-8484-4b1d9c1c8a10",
               "name": "kdrive_url",
               "value": "",
               "type": "string"
             },
             {
-              "id": "d5fdfc4a-0725-4eb7-9faa-f838df0d2c54",
+              "id": "b69cddd6-cb4e-40d0-af5e-a8a994056686",
               "name": "author",
               "value": "={{ $json.author }}",
               "type": "string"
             },
             {
-              "id": "117ea561-e0ac-47a5-b5ee-d4e2e8ca5e50",
+              "id": "bab63497-3c88-4aef-86f4-7ed63b756a61",
               "name": "format",
               "value": "={{ $json.format }}",
               "type": "string"
             },
             {
-              "id": "5c2d4d19-5902-4827-ba51-08b61f95e940",
+              "id": "df98b6cb-c807-4682-83ea-305161d54b3c",
               "name": "tags_topic",
               "value": "={{ $json.tags_topic }}",
               "type": "array"
             },
             {
-              "id": "606a2fc2-dfa7-426b-a059-169d6ddb6b30",
+              "id": "3c2569f0-79c6-4ed7-a9ea-5967071e4945",
               "name": "medium",
               "value": "={{ $json.medium }}",
               "type": "string"
             },
             {
-              "id": "9051072f-92ec-4f50-8dfe-75a66fb04419",
+              "id": "85a8d7b8-ec52-42ae-b22b-f9da1dc9c8b5",
               "name": "media_platform",
               "value": "={{ $json.media_platform }}",
               "type": "string"
             },
             {
-              "id": "f5ad592a-0498-4c5a-9438-a4f705d09b9d",
+              "id": "4a3d6697-647b-420b-87e5-948291820e58",
               "name": "transcript",
               "value": "={{ $json.transcript }}",
               "type": "string"
             },
             {
-              "id": "88ea9089-02cc-454e-bf7f-fb4e6c6aee93",
+              "id": "cc6b0454-da26-469f-b439-11506b9a502f",
               "name": "transcript_ok",
               "value": "={{ $json.transcript_ok }}",
               "type": "boolean"
             },
             {
-              "id": "56706969-cfe0-4d89-8d6e-70717b6faf0f",
+              "id": "a95169c9-f8f6-43ab-94a8-825c3ef40729",
               "name": "transcript_source",
               "value": "={{ $json.transcript_source }}",
               "type": "string"
             },
             {
-              "id": "dd7d3516-3a55-4df5-b312-ceea356b3006",
+              "id": "c34409b2-31cc-4701-a731-574fc13ec69e",
               "name": "transcript_error",
               "value": "={{ $json.transcript_error }}",
               "type": "string"
             },
             {
-              "id": "77503c34-b71e-490e-a320-fa66643e8762",
+              "id": "52c56455-74ae-44e6-98e0-649da39efca3",
               "name": "transcript_lang",
               "value": "={{ $json.transcript_lang }}",
               "type": "string"
@@ -493,7 +493,7 @@
       }
     },
     {
-      "id": "3023385f-badc-4f78-b33d-f86d90a9d0c6",
+      "id": "a791bf33-1cfd-49bb-9ab3-cd35f28c223a",
       "name": "Notion Path?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -511,7 +511,7 @@
           },
           "conditions": [
             {
-              "id": "9ac64bb1-26ce-4e74-ae81-f5ea93753832",
+              "id": "3f33d555-25b6-4e56-9018-927396ef4f5b",
               "leftValue": "={{ $json.has_image }}",
               "rightValue": true,
               "operator": {
@@ -527,7 +527,7 @@
       }
     },
     {
-      "id": "1b593830-ca01-4953-8ee8-a2542e48af15",
+      "id": "66ae2f98-327c-49f4-a241-30d37722c3be",
       "name": "Create Notion (with image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -602,7 +602,7 @@
                 "multipleValues": false,
                 "fileUrl": [
                   {
-                    "name": "={{ $json.title }}.png",
+                    "name": "={{ $json.filename }}.png",
                     "url": "={{ $json.kdrive_url }}"
                   }
                 ]
@@ -640,7 +640,7 @@
       }
     },
     {
-      "id": "26c5d12e-162c-44cb-af14-fb31ed3a6974",
+      "id": "5f2e870f-386e-427b-bc00-ca3564365547",
       "name": "Create Notion (no image)",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
@@ -736,7 +736,7 @@
       }
     },
     {
-      "id": "78be4112-3cee-4cca-98c2-de05d91f28d1",
+      "id": "43ac3f33-c8c9-469e-9c25-e421a9ac58fe",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -751,7 +751,7 @@
       }
     },
     {
-      "id": "64ec9bc4-1f3c-4df0-8783-f347cf7d0662",
+      "id": "e5055aa9-c614-4739-a4e6-51d716141b0b",
       "name": "Respond to Webhook1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
